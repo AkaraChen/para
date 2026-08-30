@@ -1,0 +1,6 @@
+/para
+/para.exe
+/dist/
+*.test
+.DS_Store
+/agent-tools/
