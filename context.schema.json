@@ -1,0 +1,189 @@
+{
+  "$schema": "https://raw.githubusercontent.com/AkaraChen/ctxl/main/core/schema/loader/ctxl.schema.json",
+  "name": "para",
+  "description": "PARA notes CLI: capture into an inbox, then file notes as Projects, Areas, Resources, or Archives.",
+  "generation": {
+    "mode": "existing-module",
+    "output": "cmd/para",
+    "ctxl_version": "v0.0.0-20260827070639-933b52740aab"
+  },
+  "store": { "name": "para" },
+  "skills": [
+    {
+      "type": "builtin",
+      "name": "para-notes",
+      "description": "Operate a PARA notes vault through the para CLI instead of editing vault files by hand.",
+      "allowed-tools": "Bash(para:*)"
+    },
+    { "type": "custom", "directory": "skills/para-method" }
+  ],
+  "entities": [
+    {
+      "name": "inbox",
+      "kind": "singular",
+      "format": "markdown",
+      "path": "INBOX.md",
+      "location": "root",
+      "scope": "both",
+      "description": "Capture inbox: dump unprocessed notes here, then file each item into a project, area, resource, or archive.",
+      "fields": [
+        {
+          "name": "updated",
+          "type": "string",
+          "description": "Last capture date, YYYY-MM-DD"
+        }
+      ]
+    },
+    {
+      "name": "index",
+      "kind": "singular",
+      "format": "markdown",
+      "path": "INDEX.md",
+      "location": "root",
+      "scope": "both",
+      "description": "Vault overview: what this PARA store is for and which projects or areas are in focus.",
+      "fields": [
+        {
+          "name": "title",
+          "type": "string",
+          "description": "Vault title"
+        },
+        {
+          "name": "horizon",
+          "type": "string",
+          "description": "Current planning horizon, e.g. 2026-Q3"
+        }
+      ]
+    },
+    {
+      "name": "project",
+      "kind": "plural",
+      "format": "markdown",
+      "path": "Projects",
+      "location": "root",
+      "scope": "both",
+      "id": "id",
+      "description": "Projects: short-term efforts with a finish line and a concrete outcome. Archive when done.",
+      "fields": [
+        {
+          "name": "status",
+          "type": "string",
+          "required": true,
+          "description": "active | waiting | done"
+        },
+        {
+          "name": "due",
+          "type": "string",
+          "description": "Deadline, YYYY-MM-DD"
+        },
+        {
+          "name": "outcome",
+          "type": "string",
+          "required": true,
+          "description": "What done looks like in one sentence"
+        },
+        {
+          "name": "area",
+          "type": "string",
+          "description": "Related area id"
+        }
+      ]
+    },
+    {
+      "name": "area",
+      "kind": "plural",
+      "format": "markdown",
+      "path": "Areas",
+      "location": "root",
+      "scope": "both",
+      "id": "id",
+      "description": "Areas: ongoing responsibilities with no end date. Review the standard; do not archive unless the role ends.",
+      "fields": [
+        {
+          "name": "status",
+          "type": "string",
+          "required": true,
+          "description": "active | paused"
+        },
+        {
+          "name": "standard",
+          "type": "string",
+          "description": "What good looks like for this responsibility"
+        }
+      ]
+    },
+    {
+      "name": "resource",
+      "kind": "plural",
+      "format": "markdown",
+      "path": "Resources",
+      "location": "root",
+      "scope": "both",
+      "id": "id",
+      "description": "Resources: topics of ongoing interest — references, research, and material you may need later.",
+      "fields": [
+        {
+          "name": "topic",
+          "type": "string",
+          "required": true,
+          "description": "Subject this resource is about"
+        },
+        {
+          "name": "kind",
+          "type": "string",
+          "description": "article | book | course | note | other"
+        }
+      ]
+    },
+    {
+      "name": "archive",
+      "kind": "plural",
+      "format": "markdown",
+      "path": "Archives",
+      "location": "root",
+      "scope": "both",
+      "id": "id",
+      "description": "Archives: inactive projects, areas, and resources kept for search, not for daily work.",
+      "fields": [
+        {
+          "name": "origin",
+          "type": "string",
+          "required": true,
+          "description": "project | area | resource"
+        },
+        {
+          "name": "archived",
+          "type": "string",
+          "description": "Archive date, YYYY-MM-DD"
+        }
+      ]
+    },
+    {
+      "name": "review",
+      "kind": "plural",
+      "format": "ndjson",
+      "path": "reviews.ndjson",
+      "location": "store",
+      "scope": "both",
+      "description": "Append-only review log for weekly or monthly PARA sweeps.",
+      "fields": [
+        {
+          "name": "kind",
+          "type": "string",
+          "required": true,
+          "description": "weekly | monthly | ad-hoc"
+        },
+        {
+          "name": "focus",
+          "type": "string",
+          "description": "What was reviewed"
+        },
+        {
+          "name": "notes",
+          "type": "object",
+          "description": "Free-form review payload as JSON"
+        }
+      ]
+    }
+  ]
+}
