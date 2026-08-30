@@ -79,7 +79,7 @@ func TestParaVaultSmoke(t *testing.T) {
 	}
 }
 
-func repoRoot(t *testing.T) {
+func repoRoot(t *testing.T) string {
 	t.Helper()
 	wd, err := os.Getwd()
 	if err != nil {
