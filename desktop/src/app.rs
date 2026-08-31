@@ -305,28 +305,35 @@ impl ParaApp {
                 .into_any_element();
         }
 
-        TabBar::new("preview-tabs")
+        // TabBar's default variant paints a full-bleed strip; wrap it so the
+        // first tab is not glued to the tree divider.
+        div()
             .w_full()
-            .pl_3()
-            .menu(true)
-            .max_width(px(180.))
-            .selected_index(self.active_tab)
-            .on_click(cx.listener(|this, index, _, cx| {
-                this.active_tab = *index;
-                cx.notify();
-            }))
-            .children(self.tabs.iter().enumerate().map(|(index, tab)| {
-                Tab::new().label(tab.title.clone()).suffix(
-                    Button::new(("close-tab", index))
-                        .ghost()
-                        .xsmall()
-                        .icon(IconName::Close)
-                        .tooltip("Close tab")
-                        .on_click(cx.listener(move |this, _, _, cx| {
-                            this.close_tab(index, cx);
-                        })),
-                )
-            }))
+            .pl_4()
+            .bg(cx.theme().tokens.tab_bar)
+            .child(
+                TabBar::new("preview-tabs")
+                    .w_full()
+                    .menu(true)
+                    .max_width(px(180.))
+                    .selected_index(self.active_tab)
+                    .on_click(cx.listener(|this, index, _, cx| {
+                        this.active_tab = *index;
+                        cx.notify();
+                    }))
+                    .children(self.tabs.iter().enumerate().map(|(index, tab)| {
+                        Tab::new().label(tab.title.clone()).suffix(
+                            Button::new(("close-tab", index))
+                                .ghost()
+                                .xsmall()
+                                .icon(IconName::Close)
+                                .tooltip("Close tab")
+                                .on_click(cx.listener(move |this, _, _, cx| {
+                                    this.close_tab(index, cx);
+                                })),
+                        )
+                    })),
+            )
             .into_any_element()
     }
 
