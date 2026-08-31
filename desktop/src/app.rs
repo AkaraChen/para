@@ -262,36 +262,34 @@ impl ParaApp {
                 .into_any_element();
         }
 
-        // Same sidebar gray as the window title row; only the active tab is white.
-        div()
+        // Fill the 48px title row with sidebar gray so TabBar's default 32px
+        // tab_bar fill cannot leave a lighter strip above the preview.
+        TabBar::new("preview-tabs")
             .w_full()
             .h(chrome::HEADER_HEIGHT)
             .pl_4()
             .bg(cx.theme().sidebar)
-            .child(
-                TabBar::new("preview-tabs")
-                    .w_full()
-                    .menu(true)
-                    .max_width(px(180.))
-                    .suffix(self.render_workspace_controls(cx))
-                    .selected_index(self.active_tab)
-                    .on_click(cx.listener(|this, index, _, cx| {
-                        this.active_tab = *index;
-                        cx.notify();
-                    }))
-                    .children(self.tabs.iter().enumerate().map(|(index, tab)| {
-                        Tab::new().label(tab.title.clone()).suffix(
-                            Button::new(("close-tab", index))
-                                .ghost()
-                                .xsmall()
-                                .icon(IconName::Close)
-                                .tooltip("Close tab")
-                                .on_click(cx.listener(move |this, _, _, cx| {
-                                    this.close_tab(index, cx);
-                                })),
-                        )
-                    })),
-            )
+            .items_end()
+            .menu(true)
+            .max_width(px(180.))
+            .suffix(self.render_workspace_controls(cx))
+            .selected_index(self.active_tab)
+            .on_click(cx.listener(|this, index, _, cx| {
+                this.active_tab = *index;
+                cx.notify();
+            }))
+            .children(self.tabs.iter().enumerate().map(|(index, tab)| {
+                Tab::new().label(tab.title.clone()).suffix(
+                    Button::new(("close-tab", index))
+                        .ghost()
+                        .xsmall()
+                        .icon(IconName::Close)
+                        .tooltip("Close tab")
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            this.close_tab(index, cx);
+                        })),
+                )
+            }))
             .into_any_element()
     }
 
