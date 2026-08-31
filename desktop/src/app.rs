@@ -306,9 +306,8 @@ impl ParaApp {
         }
 
         TabBar::new("preview-tabs")
-            .underline()
-            .small()
             .w_full()
+            .pl_3()
             .menu(true)
             .max_width(px(180.))
             .selected_index(self.active_tab)
