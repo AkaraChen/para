@@ -1,13 +1,13 @@
 use std::path::PathBuf;
 
 use gpui::{
-    App, AppContext as _, Context, Entity, InteractiveElement as _, IntoElement,
-    ParentElement as _, Render, SharedString, Styled, Subscription, Window, div,
-    prelude::FluentBuilder as _, px,
+    div, prelude::FluentBuilder as _, px, App, AppContext as _, Context, Entity,
+    InteractiveElement as _, IntoElement, ParentElement as _, Render, SharedString, Styled,
+    Subscription, Window,
 };
 use gpui_component::{
-    ActiveTheme as _, Icon, IconName, Root, Sizable, StyledExt as _, Theme, ThemeMode, TitleBar,
     button::{Button, ButtonVariants as _},
+    description_list::{DescriptionItem, DescriptionList},
     h_flex,
     input::{Input, InputEvent, InputState},
     list::ListItem,
@@ -15,8 +15,9 @@ use gpui_component::{
     scroll::ScrollableElement as _,
     tab::{Tab, TabBar},
     text::TextView,
-    tree::{TreeState, tree},
-    v_flex,
+    tree::{tree, TreeState},
+    v_flex, ActiveTheme as _, Icon, IconName, Root, Sizable, StyledExt as _, Theme, ThemeMode,
+    TitleBar,
 };
 
 use crate::agent::{self, AgentContext, ChatMessage, ChatRole};
@@ -84,7 +85,7 @@ impl ParaApp {
             files: vault::vault_file_list(&self.vault_root),
             open_path: open.map(|tab| tab.path.clone()),
             open_title: open.map(|tab| tab.title.clone()),
-            open_excerpt: open.map(|tab| tab.content.clone()),
+            open_excerpt: open.map(|tab| tab.excerpt()),
         }
     }
 
@@ -274,29 +275,17 @@ impl ParaApp {
             .size_full()
             .bg(cx.theme().background)
             .child(self.render_tab_bar(cx))
-            .child(
-                div()
-                    .id("markdown-preview")
-                    .flex_1()
-                    .min_h_0()
-                    .p_5()
-                    .map(|this| match self.tabs.get(self.active_tab) {
-                        Some(tab) => this.child(
-                            TextView::markdown(
-                                SharedString::from(format!("preview-{}", tab.path.display())),
-                                tab.content.clone(),
-                            )
-                            .selectable(true)
-                            .scrollable(true),
-                        ),
-                        None => this.child(empty_state(
-                            cx,
-                            IconName::File,
-                            "Open a markdown file",
-                            "Pick a note in the vault tree. Preview is read-only.",
-                        )),
-                    }),
-            )
+            .child(div().id("markdown-preview").flex_1().min_h_0().map(|this| {
+                match self.tabs.get(self.active_tab) {
+                    Some(tab) => this.child(render_note(tab)),
+                    None => this.p_5().child(empty_state(
+                        cx,
+                        IconName::File,
+                        "Open a markdown file",
+                        "Pick a note in the vault tree. Preview is read-only.",
+                    )),
+                }
+            }))
     }
 
     fn render_tab_bar(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -441,6 +430,59 @@ fn panel_header(cx: &App, icon: IconName, title: &'static str) -> impl IntoEleme
                 .text_color(cx.theme().muted_foreground),
         )
         .child(div().text_sm().font_medium().child(title))
+}
+
+fn render_note(tab: &OpenTab) -> impl IntoElement {
+    v_flex()
+        .size_full()
+        .min_h_0()
+        .when(!tab.frontmatter.is_empty(), |this| {
+            this.child(
+                div()
+                    .px_5()
+                    .pt_4()
+                    .pb_1()
+                    .child(frontmatter_list(&tab.frontmatter)),
+            )
+        })
+        .child(
+            div()
+                .id(SharedString::from(format!(
+                    "markdown-body-{}",
+                    tab.path.display()
+                )))
+                .flex_1()
+                .min_h_0()
+                .px_5()
+                .pt_3()
+                .pb_5()
+                .child(
+                    TextView::markdown(
+                        SharedString::from(format!("preview-{}", tab.path.display())),
+                        tab.content.clone(),
+                    )
+                    .selectable(true)
+                    .scrollable(true),
+                ),
+        )
+}
+
+fn frontmatter_list(fields: &[vault::FrontmatterField]) -> impl IntoElement {
+    const COLUMNS: usize = 2;
+    DescriptionList::new()
+        .columns(COLUMNS)
+        .small()
+        .label_width(px(108.))
+        .children(fields.iter().map(|field| {
+            let span = if field.value.chars().count() > 40 || field.value.contains('\n') {
+                COLUMNS
+            } else {
+                1
+            };
+            DescriptionItem::new(field.key.clone())
+                .value(field.value.clone())
+                .span(span)
+        }))
 }
 
 fn empty_state(

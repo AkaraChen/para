@@ -20,10 +20,33 @@ const MAX_PREVIEW_BYTES: usize = 1_000_000;
 const MAX_DEPTH: usize = 8;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FrontmatterField {
+    pub key: String,
+    pub value: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OpenTab {
     pub path: PathBuf,
     pub title: String,
     pub content: String,
+    pub frontmatter: Vec<FrontmatterField>,
+}
+
+impl OpenTab {
+    /// Body plus YAML fields, so the filing assistant still sees `due` / `standard`.
+    pub fn excerpt(&self) -> String {
+        if self.frontmatter.is_empty() {
+            return self.content.clone();
+        }
+        let meta = self
+            .frontmatter
+            .iter()
+            .map(|field| format!("{}: {}", field.key, field.value))
+            .collect::<Vec<_>>()
+            .join("\n");
+        format!("{}\n\n{meta}", self.content)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -124,11 +147,12 @@ pub fn load_markdown(path: &Path) -> Result<OpenTab, String> {
     } else {
         &raw
     };
-    let mut content = String::from_utf8_lossy(slice).into_owned();
+    let mut raw = String::from_utf8_lossy(slice).into_owned();
     if truncated {
-        content.push_str("\n\n> Preview truncated after 1 MB.\n");
+        raw.push_str("\n\n> Preview truncated after 1 MB.\n");
     }
 
+    let (frontmatter, content) = split_frontmatter(&raw);
     let title = path
         .file_name()
         .and_then(|name| name.to_str())
@@ -139,7 +163,217 @@ pub fn load_markdown(path: &Path) -> Result<OpenTab, String> {
         path: path.to_path_buf(),
         title,
         content,
+        frontmatter,
     })
+}
+
+/// Split a leading YAML document (`---` … `---`) from the markdown body.
+pub fn split_frontmatter(raw: &str) -> (Vec<FrontmatterField>, String) {
+    let text = raw.strip_prefix('\u{feff}').unwrap_or(raw);
+    let mut lines = text.lines();
+    let Some(first) = lines.next() else {
+        return (Vec::new(), String::new());
+    };
+    if !is_frontmatter_fence(first) {
+        return (Vec::new(), raw.to_string());
+    }
+
+    let mut yaml_lines = Vec::new();
+    let mut closed = false;
+    for line in lines.by_ref() {
+        if is_frontmatter_fence(line) {
+            closed = true;
+            break;
+        }
+        yaml_lines.push(line);
+    }
+    if !closed {
+        return (Vec::new(), raw.to_string());
+    }
+
+    let body = lines.collect::<Vec<_>>().join("\n");
+    let body = body.trim_start_matches(['\r', '\n']).to_string();
+    (parse_frontmatter_fields(&yaml_lines), body)
+}
+
+fn is_frontmatter_fence(line: &str) -> bool {
+    matches!(line.trim(), "---" | "...")
+}
+
+fn parse_frontmatter_fields(lines: &[&str]) -> Vec<FrontmatterField> {
+    let mut fields = Vec::new();
+    let mut pending_key: Option<String> = None;
+    let mut pending_block: Option<BlockStyle> = None;
+    let mut pending_values: Vec<String> = Vec::new();
+    let mut block_indent: Option<usize> = None;
+
+    let flush = |fields: &mut Vec<FrontmatterField>,
+                 key: &mut Option<String>,
+                 block: &mut Option<BlockStyle>,
+                 values: &mut Vec<String>,
+                 indent: &mut Option<usize>| {
+        let Some(key) = key.take() else {
+            values.clear();
+            *block = None;
+            *indent = None;
+            return;
+        };
+        let value = match block.take() {
+            Some(BlockStyle::Folded) => values
+                .iter()
+                .map(|line| line.trim())
+                .filter(|line| !line.is_empty())
+                .collect::<Vec<_>>()
+                .join(" "),
+            Some(BlockStyle::Literal) => values.join("\n"),
+            None if values.len() > 1 => values.join(", "),
+            None => values.first().cloned().unwrap_or_default(),
+        };
+        fields.push(FrontmatterField { key, value });
+        values.clear();
+        *indent = None;
+    };
+
+    for line in lines {
+        if line.trim().is_empty() {
+            if pending_block.is_some() {
+                pending_values.push(String::new());
+            }
+            continue;
+        }
+        if line.trim_start().starts_with('#') && indent_width(line) == 0 {
+            continue;
+        }
+
+        let indent = indent_width(line);
+        let trimmed = line.trim();
+
+        if indent == 0 {
+            if let Some((key, raw_value)) = split_yaml_key_value(trimmed) {
+                flush(
+                    &mut fields,
+                    &mut pending_key,
+                    &mut pending_block,
+                    &mut pending_values,
+                    &mut block_indent,
+                );
+                match parse_block_style(&raw_value) {
+                    Some(style) => {
+                        pending_key = Some(key);
+                        pending_block = Some(style);
+                    }
+                    None if raw_value.is_empty() => {
+                        pending_key = Some(key);
+                    }
+                    None => {
+                        fields.push(FrontmatterField {
+                            key,
+                            value: unquote_yaml(&raw_value),
+                        });
+                    }
+                }
+                continue;
+            }
+            flush(
+                &mut fields,
+                &mut pending_key,
+                &mut pending_block,
+                &mut pending_values,
+                &mut block_indent,
+            );
+            continue;
+        }
+
+        if pending_key.is_none() {
+            continue;
+        }
+
+        if let Some(style) = pending_block {
+            let content = match block_indent {
+                Some(min) if indent >= min => {
+                    line.get(min..).unwrap_or(trimmed).trim_end().to_string()
+                }
+                None => {
+                    block_indent = Some(indent);
+                    trimmed.to_string()
+                }
+                Some(_) => trimmed.to_string(),
+            };
+            if style == BlockStyle::Literal || !content.is_empty() {
+                pending_values.push(content);
+            }
+            continue;
+        }
+
+        if let Some(item) = trimmed.strip_prefix("- ") {
+            pending_values.push(unquote_yaml(item.trim()));
+            continue;
+        }
+        if trimmed == "-" {
+            pending_values.push(String::new());
+            continue;
+        }
+        if let Some((key, raw_value)) = split_yaml_key_value(trimmed) {
+            if let Some(parent) = pending_key.as_deref() {
+                fields.push(FrontmatterField {
+                    key: format!("{parent}.{key}"),
+                    value: unquote_yaml(&raw_value),
+                });
+            }
+            continue;
+        }
+        pending_values.push(unquote_yaml(trimmed));
+    }
+
+    flush(
+        &mut fields,
+        &mut pending_key,
+        &mut pending_block,
+        &mut pending_values,
+        &mut block_indent,
+    );
+    fields
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum BlockStyle {
+    Literal,
+    Folded,
+}
+
+fn parse_block_style(value: &str) -> Option<BlockStyle> {
+    match value.trim() {
+        "|" | "|-" | "|+" => Some(BlockStyle::Literal),
+        ">" | ">-" | ">+" => Some(BlockStyle::Folded),
+        _ => None,
+    }
+}
+
+fn split_yaml_key_value(line: &str) -> Option<(String, String)> {
+    let (key, value) = line.split_once(':')?;
+    let key = unquote_yaml(key.trim());
+    if key.is_empty() || key.starts_with('-') {
+        return None;
+    }
+    Some((key, value.trim().to_string()))
+}
+
+fn unquote_yaml(value: &str) -> String {
+    let value = value.trim();
+    let bytes = value.as_bytes();
+    if bytes.len() >= 2
+        && ((bytes[0] == b'"' && bytes[bytes.len() - 1] == b'"')
+            || (bytes[0] == b'\'' && bytes[bytes.len() - 1] == b'\''))
+    {
+        return value[1..value.len() - 1].to_string();
+    }
+    value.to_string()
+}
+
+fn indent_width(line: &str) -> usize {
+    line.chars()
+        .take_while(|ch| *ch == ' ' || *ch == '\t')
+        .count()
 }
 
 pub fn default_open_path(root: &Path) -> Option<PathBuf> {
@@ -338,5 +572,68 @@ mod tests {
         fs::write(root.join("INBOX.md"), "").unwrap();
         assert!(looks_like_vault(&root));
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn split_frontmatter_reads_scalar_fields() {
+        let raw = "---\nid: ship-para-desktop\nstatus: active\noutcome: A GPUI app\n---\n\n# Ship para desktop\n";
+        let (fields, body) = split_frontmatter(raw);
+        assert_eq!(
+            fields
+                .iter()
+                .map(|field| (field.key.as_str(), field.value.as_str()))
+                .collect::<Vec<_>>(),
+            vec![
+                ("id", "ship-para-desktop"),
+                ("status", "active"),
+                ("outcome", "A GPUI app"),
+            ]
+        );
+        assert_eq!(body, "# Ship para desktop");
+    }
+
+    #[test]
+    fn split_frontmatter_keeps_body_when_fence_is_missing() {
+        let raw = "# Inbox\n\nDump first.\n";
+        let (fields, body) = split_frontmatter(raw);
+        assert!(fields.is_empty());
+        assert_eq!(body, raw);
+    }
+
+    #[test]
+    fn split_frontmatter_ignores_unclosed_fence() {
+        let raw = "---\nid: broken\n# still markdown\n";
+        let (fields, body) = split_frontmatter(raw);
+        assert!(fields.is_empty());
+        assert_eq!(body, raw);
+    }
+
+    #[test]
+    fn split_frontmatter_reads_lists_and_blocks() {
+        let raw =
+            "---\ntags:\n  - para\n  - desktop\nnotes: |\n  line one\n  line two\n---\nbody\n";
+        let (fields, body) = split_frontmatter(raw);
+        assert_eq!(fields[0].key, "tags");
+        assert_eq!(fields[0].value, "para, desktop");
+        assert_eq!(fields[1].key, "notes");
+        assert_eq!(fields[1].value, "line one\nline two");
+        assert_eq!(body, "body");
+    }
+
+    #[test]
+    fn load_markdown_strips_example_frontmatter() {
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("example-vault/Projects/ship-para-desktop.md");
+        let tab = load_markdown(&path).expect("example note");
+        assert_eq!(
+            tab.frontmatter
+                .iter()
+                .map(|field| field.key.as_str())
+                .collect::<Vec<_>>(),
+            vec!["id", "status", "due", "outcome", "area"]
+        );
+        assert!(tab.content.starts_with("# Ship para desktop"));
+        assert!(!tab.content.starts_with("---"));
+        assert!(tab.excerpt().contains("due: 2026-09-15"));
     }
 }
