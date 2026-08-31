@@ -1,9 +1,10 @@
 use gpui::{WindowBounds, WindowOptions, px, size};
-use gpui_component::TitleBar;
 use gpui_component_assets::Assets;
 
 mod agent;
 mod app;
+mod chat;
+mod preview;
 mod vault;
 
 fn main() {
@@ -15,7 +16,7 @@ fn main() {
         let window_options = WindowOptions {
             window_bounds: Some(WindowBounds::centered(size(px(1280.), px(800.)), cx)),
             window_min_size: Some(size(px(880.), px(560.))),
-            ..TitleBar::window_options()
+            ..Default::default()
         };
 
         cx.spawn(async move |cx| {

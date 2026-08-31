@@ -2,25 +2,24 @@ use std::path::PathBuf;
 
 use gpui::{
     div, prelude::FluentBuilder as _, px, App, AppContext as _, Context, Entity,
-    InteractiveElement as _, IntoElement, ParentElement as _, Render, SharedString, Styled,
+    InteractiveElement as _, IntoElement, ParentElement as _, Render, Styled,
     Subscription, Window,
 };
 use gpui_component::{
     button::{Button, ButtonVariants as _},
-    description_list::{DescriptionItem, DescriptionList},
     h_flex,
     input::{Input, InputEvent, InputState},
     list::ListItem,
     resizable::{h_resizable, resizable_panel},
     scroll::ScrollableElement as _,
     tab::{Tab, TabBar},
-    text::TextView,
     tree::{tree, TreeState},
-    v_flex, ActiveTheme as _, Icon, IconName, Root, Sizable, StyledExt as _, Theme, ThemeMode,
-    TitleBar,
+    v_flex, ActiveTheme as _, Icon, IconName, Root, Sizable, Theme, ThemeMode,
 };
 
-use crate::agent::{self, AgentContext, ChatMessage, ChatRole};
+use crate::agent::{self, AgentContext, ChatMessage};
+use crate::chat;
+use crate::preview;
 use crate::vault::{self, OpenTab};
 
 pub struct ParaApp {
@@ -166,80 +165,17 @@ impl ParaApp {
         cx.notify();
     }
 
-    fn render_title_bar(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let vault_label = self.vault_root.display().to_string();
-
-        TitleBar::new()
-            .child(
-                h_flex()
-                    .items_center()
-                    .gap_3()
-                    .child(
-                        h_flex()
-                            .items_center()
-                            .gap_2()
-                            .child(
-                                div()
-                                    .size_6()
-                                    .rounded(cx.theme().radius)
-                                    .bg(cx.theme().primary)
-                                    .text_color(cx.theme().primary_foreground)
-                                    .flex()
-                                    .items_center()
-                                    .justify_center()
-                                    .text_xs()
-                                    .font_semibold()
-                                    .child("P"),
-                            )
-                            .child(div().text_sm().font_semibold().child("para")),
-                    )
-                    .child(
-                        div()
-                            .text_xs()
-                            .text_color(cx.theme().muted_foreground)
-                            .child(vault_label),
-                    ),
-            )
-            .child(
-                h_flex()
-                    .items_center()
-                    .gap_1()
-                    .child(
-                        Button::new("refresh-tree")
-                            .ghost()
-                            .xsmall()
-                            .icon(IconName::Undo2)
-                            .tooltip("Reload the file tree")
-                            .on_click(cx.listener(|this, _, _, cx| this.refresh_tree(cx))),
-                    )
-                    .child(
-                        Button::new("toggle-theme")
-                            .ghost()
-                            .xsmall()
-                            .icon(if Theme::global(cx).is_dark() {
-                                IconName::Sun
-                            } else {
-                                IconName::Moon
-                            })
-                            .tooltip("Toggle light / dark")
-                            .on_click(
-                                cx.listener(|this, _, window, cx| this.toggle_theme(window, cx)),
-                            ),
-                    ),
-            )
-    }
-
     fn render_file_tree(&self, cx: &mut Context<Self>) -> impl IntoElement {
         v_flex()
             .size_full()
             .bg(cx.theme().sidebar)
-            .child(panel_header(cx, IconName::Folder, "Vault"))
             .child(
                 div()
                     .flex_1()
                     .min_h_0()
                     .px_1()
-                    .py_1()
+                    .pt_2()
+                    .pb_1()
                     .child(tree(&self.tree_state, {
                         let root = self.vault_root.clone();
                         move |ix, entry, selected, _window, cx| {
@@ -277,8 +213,8 @@ impl ParaApp {
             .child(self.render_tab_bar(cx))
             .child(div().id("markdown-preview").flex_1().min_h_0().map(|this| {
                 match self.tabs.get(self.active_tab) {
-                    Some(tab) => this.child(render_note(tab)),
-                    None => this.p_5().child(empty_state(
+                    Some(tab) => this.child(preview::render_note(tab)),
+                    None => this.p_5().child(preview::empty_state(
                         cx,
                         IconName::File,
                         "Open a markdown file",
@@ -298,10 +234,12 @@ impl ParaApp {
                 .items_center()
                 .child(
                     div()
+                        .flex_1()
                         .text_xs()
                         .text_color(cx.theme().muted_foreground)
                         .child("No open notes"),
                 )
+                .child(self.render_workspace_controls(cx))
                 .into_any_element();
         }
 
@@ -316,6 +254,7 @@ impl ParaApp {
                     .w_full()
                     .menu(true)
                     .max_width(px(180.))
+                    .suffix(self.render_workspace_controls(cx))
                     .selected_index(self.active_tab)
                     .on_click(cx.listener(|this, index, _, cx| {
                         this.active_tab = *index;
@@ -337,54 +276,71 @@ impl ParaApp {
             .into_any_element()
     }
 
+    fn render_workspace_controls(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        h_flex()
+            .items_center()
+            .gap_1()
+            .pr_2()
+            .child(
+                Button::new("refresh-tree")
+                    .ghost()
+                    .xsmall()
+                    .icon(IconName::Undo2)
+                    .tooltip("Reload the file tree")
+                    .on_click(cx.listener(|this, _, _, cx| this.refresh_tree(cx))),
+            )
+            .child(
+                Button::new("toggle-theme")
+                    .ghost()
+                    .xsmall()
+                    .icon(if Theme::global(cx).is_dark() {
+                        IconName::Sun
+                    } else {
+                        IconName::Moon
+                    })
+                    .tooltip("Toggle light / dark")
+                    .on_click(cx.listener(|this, _, window, cx| this.toggle_theme(window, cx))),
+            )
+    }
+
     fn render_chat(&self, cx: &mut Context<Self>) -> impl IntoElement {
         v_flex()
             .size_full()
             .bg(cx.theme().sidebar)
-            .child(panel_header(cx, IconName::Bot, "Agent"))
             .child(
                 div()
                     .id("agent-transcript")
                     .flex_1()
                     .min_h_0()
                     .px_3()
-                    .py_3()
+                    .pt_4()
+                    .pb_3()
                     .overflow_y_scrollbar()
                     .child(
                         v_flex().gap_3().children(
                             self.messages
                                 .iter()
                                 .enumerate()
-                                .map(|(index, message)| chat_bubble(index, message, cx)),
+                                .map(|(index, message)| chat::bubble(index, message, cx)),
                         ),
                     ),
             )
             .child(
-                v_flex()
+                h_flex()
                     .p_3()
                     .gap_2()
+                    .items_end()
                     .border_t_1()
                     .border_color(cx.theme().border)
+                    .child(div().flex_1().child(Input::new(&self.chat_input)))
                     .child(
-                        h_flex()
-                            .gap_2()
-                            .items_end()
-                            .child(div().flex_1().child(Input::new(&self.chat_input)))
-                            .child(
-                                Button::new("send-chat")
-                                    .primary()
-                                    .icon(IconName::ArrowUp)
-                                    .tooltip("Send")
-                                    .on_click(cx.listener(|this, _, window, cx| {
-                                        this.send_chat(window, cx);
-                                    })),
-                            ),
-                    )
-                    .child(
-                        div()
-                            .text_xs()
-                            .text_color(cx.theme().muted_foreground)
-                            .child("Local PARA assistant. Preview stays read-only."),
+                        Button::new("send-chat")
+                            .primary()
+                            .icon(IconName::ArrowUp)
+                            .tooltip("Send")
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                this.send_chat(window, cx);
+                            })),
                     ),
             )
     }
@@ -392,151 +348,27 @@ impl ParaApp {
 
 impl Render for ParaApp {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        v_flex()
+        div()
+            .id("para-workspace")
             .size_full()
             .bg(cx.theme().background)
-            .child(self.render_title_bar(cx))
             .child(
-                div()
-                    .id("para-workspace")
-                    .flex_1()
-                    .min_h_0()
-                    .size_full()
+                h_resizable("para-workspace")
                     .child(
-                        h_resizable("para-workspace")
-                            .child(
-                                resizable_panel()
-                                    .size(px(260.))
-                                    .size_range(px(180.)..px(420.))
-                                    .child(self.render_file_tree(cx)),
-                            )
-                            .child(resizable_panel().child(self.render_preview(cx)))
-                            .child(
-                                resizable_panel()
-                                    .size(px(320.))
-                                    .size_range(px(240.)..px(480.))
-                                    .child(self.render_chat(cx)),
-                            ),
+                        resizable_panel()
+                            .size(px(260.))
+                            .size_range(px(180.)..px(420.))
+                            .child(self.render_file_tree(cx)),
+                    )
+                    .child(resizable_panel().child(self.render_preview(cx)))
+                    .child(
+                        resizable_panel()
+                            .size(px(320.))
+                            .size_range(px(240.)..px(480.))
+                            .child(self.render_chat(cx)),
                     ),
             )
     }
-}
-
-fn panel_header(cx: &App, icon: IconName, title: &'static str) -> impl IntoElement {
-    h_flex()
-        .h_9()
-        .px_3()
-        .gap_2()
-        .items_center()
-        .border_b_1()
-        .border_color(cx.theme().border)
-        .child(
-            Icon::new(icon)
-                .small()
-                .text_color(cx.theme().muted_foreground),
-        )
-        .child(div().text_sm().font_medium().child(title))
-}
-
-fn render_note(tab: &OpenTab) -> impl IntoElement {
-    v_flex()
-        .size_full()
-        .min_h_0()
-        .when(!tab.frontmatter.is_empty(), |this| {
-            this.child(
-                div()
-                    .px_5()
-                    .pt_4()
-                    .pb_1()
-                    .child(frontmatter_list(&tab.frontmatter)),
-            )
-        })
-        .child(
-            div()
-                .id(SharedString::from(format!(
-                    "markdown-body-{}",
-                    tab.path.display()
-                )))
-                .flex_1()
-                .min_h_0()
-                .px_5()
-                .pt_3()
-                .pb_5()
-                .child(
-                    TextView::markdown(
-                        SharedString::from(format!("preview-{}", tab.path.display())),
-                        tab.content.clone(),
-                    )
-                    .selectable(true)
-                    .scrollable(true),
-                ),
-        )
-}
-
-fn frontmatter_list(fields: &[vault::FrontmatterField]) -> impl IntoElement {
-    let columns = if fields.len() <= 1 { 1 } else { 2 };
-    DescriptionList::new()
-        .columns(columns)
-        .small()
-        .label_width(px(108.))
-        .children(fields.iter().map(move |field| {
-            let span = if field.value.chars().count() > 40 || field.value.contains('\n') {
-                columns
-            } else {
-                1
-            };
-            DescriptionItem::new(field.key.clone())
-                .value(field.value.clone())
-                .span(span)
-        }))
-}
-
-fn empty_state(
-    cx: &App,
-    icon: IconName,
-    title: &'static str,
-    detail: &'static str,
-) -> impl IntoElement {
-    v_flex()
-        .size_full()
-        .items_center()
-        .justify_center()
-        .gap_2()
-        .text_color(cx.theme().muted_foreground)
-        .child(Icon::new(icon).large())
-        .child(div().text_sm().font_medium().child(title))
-        .child(div().text_xs().child(detail))
-}
-
-fn chat_bubble(index: usize, message: &ChatMessage, cx: &App) -> impl IntoElement {
-    let is_user = message.role == ChatRole::User;
-
-    h_flex()
-        .w_full()
-        .when(is_user, |this| this.justify_end())
-        .when(!is_user, |this| this.justify_start())
-        .child(
-            div()
-                .id(("chat-msg", index))
-                .max_w_full()
-                .rounded(cx.theme().radius)
-                .px_3()
-                .py_2()
-                .when(is_user, |this| {
-                    this.bg(cx.theme().primary)
-                        .text_color(cx.theme().primary_foreground)
-                        .child(div().text_sm().child(message.text.clone()))
-                })
-                .when(!is_user, |this| {
-                    this.bg(cx.theme().background)
-                        .border_1()
-                        .border_color(cx.theme().border)
-                        .child(TextView::markdown(
-                            SharedString::from(format!("agent-{index}")),
-                            message.text.clone(),
-                        ))
-                }),
-        )
 }
 
 fn tree_icon(is_folder: bool, expanded: bool, kind: vault::ParaKind) -> IconName {
