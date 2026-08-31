@@ -56,6 +56,17 @@ Archives/
 
 个人库：`para --scope global ...`，数据在 `~/.para/`。
 
+## 桌面预览
+
+[`desktop/`](desktop/) 是 GPUI 应用：左边文件树，中间多 tab 只读 Markdown，右边本地 PARA 归档对话。
+
+```bash
+cd desktop
+cargo run -- example-vault
+```
+
+详见 [desktop/README.md](desktop/README.md)。写库仍用 CLI。
+
 ## 从 schema 生成
 
 改 [`context.schema.json`](context.schema.json) 或 Skill 之后：
