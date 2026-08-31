@@ -1,4 +1,5 @@
-use gpui::{TitlebarOptions, WindowBounds, WindowOptions, point, px, size};
+use gpui::{WindowBounds, WindowDecorations, WindowOptions, px, size};
+use gpui_component::TitleBar;
 use gpui_component_assets::Assets;
 
 mod agent;
@@ -13,20 +14,14 @@ fn main() {
     app.run(move |cx| {
         gpui_component::init(cx);
 
-        // Same pattern as egoist/waku: keep the OS frame (rounded corners,
-        // native traffic lights) and only make the titlebar fill transparent
-        // so the app header can sit in that row. Linux still uses server
-        // decorations; `appears_transparent` is a no-op there.
+        // Own the titlebar so it can use the same sidebar gray as the app.
+        // Linux ignores `appears_transparent`, so client decorations replace
+        // the WM's default (usually white) bar.
         let window_options = WindowOptions {
-            titlebar: Some(TitlebarOptions {
-                title: Some("para".into()),
-                appears_transparent: true,
-                traffic_light_position: Some(point(px(12.0), px(10.0))),
-            }),
             window_bounds: Some(WindowBounds::centered(size(px(1280.), px(800.)), cx)),
             window_min_size: Some(size(px(880.), px(560.))),
-            app_owns_titlebar_drag: true,
-            ..Default::default()
+            window_decorations: Some(WindowDecorations::Client),
+            ..TitleBar::window_options()
         };
 
         cx.spawn(async move |cx| {

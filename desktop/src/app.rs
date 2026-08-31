@@ -15,7 +15,7 @@ use gpui_component::{
     tab::{Tab, TabBar},
     tree::{tree, TreeState},
     v_flex, ActiveTheme as _, Icon, IconName, InteractiveElementExt as _, Root, Sizable, Theme,
-    ThemeMode, TITLE_BAR_HEIGHT,
+    ThemeMode, TitleBar, TITLE_BAR_HEIGHT,
 };
 
 use crate::agent::{self, AgentContext, ChatMessage};
@@ -240,7 +240,7 @@ impl ParaApp {
     fn render_preview(&self, cx: &mut Context<Self>) -> impl IntoElement {
         v_flex()
             .size_full()
-            .bg(cx.theme().tokens.tab_bar)
+            .bg(cx.theme().sidebar)
             .child(self.render_tab_bar(cx))
             .child(
                 div()
@@ -265,7 +265,7 @@ impl ParaApp {
             return h_flex()
                 .h(TITLE_BAR_HEIGHT)
                 .px_3()
-                .bg(cx.theme().tokens.tab_bar)
+                .bg(cx.theme().sidebar)
                 .items_center()
                 .child(
                     div()
@@ -278,12 +278,12 @@ impl ParaApp {
                 .into_any_element();
         }
 
-        // Sit in the title-bar row: tab_bar gray, only the active tab is white.
+        // Same sidebar gray as the window title row; only the active tab is white.
         div()
             .w_full()
             .h(TITLE_BAR_HEIGHT)
             .pl_4()
-            .bg(cx.theme().tokens.tab_bar)
+            .bg(cx.theme().sidebar)
             .child(
                 TabBar::new("preview-tabs")
                     .w_full()
@@ -342,7 +342,11 @@ impl ParaApp {
         v_flex()
             .size_full()
             .bg(cx.theme().sidebar)
-            .child(div().w_full().h(TITLE_BAR_HEIGHT).flex_shrink_0())
+            .child(
+                TitleBar::new()
+                    .bg(cx.theme().sidebar)
+                    .border_color(cx.theme().sidebar),
+            )
             .child(
                 div()
                     .id("agent-transcript")
@@ -387,7 +391,7 @@ impl Render for ParaApp {
         div()
             .id("para-workspace")
             .size_full()
-            .bg(cx.theme().background)
+            .bg(cx.theme().sidebar)
             .child(
                 h_resizable("para-workspace")
                     .child(
