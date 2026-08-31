@@ -468,14 +468,14 @@ fn render_note(tab: &OpenTab) -> impl IntoElement {
 }
 
 fn frontmatter_list(fields: &[vault::FrontmatterField]) -> impl IntoElement {
-    const COLUMNS: usize = 2;
+    let columns = if fields.len() <= 1 { 1 } else { 2 };
     DescriptionList::new()
-        .columns(COLUMNS)
+        .columns(columns)
         .small()
         .label_width(px(108.))
-        .children(fields.iter().map(|field| {
+        .children(fields.iter().map(move |field| {
             let span = if field.value.chars().count() > 40 || field.value.contains('\n') {
-                COLUMNS
+                columns
             } else {
                 1
             };
