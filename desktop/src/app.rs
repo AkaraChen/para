@@ -14,7 +14,8 @@ use gpui_component::{
     scroll::ScrollableElement as _,
     tab::{Tab, TabBar},
     tree::{tree, TreeState},
-    v_flex, ActiveTheme as _, Icon, IconName, Root, Sizable, Theme, ThemeMode,
+    v_flex, ActiveTheme as _, Icon, IconName, Root, Sizable, Theme, ThemeMode, TitleBar,
+    TITLE_BAR_HEIGHT,
 };
 
 use crate::agent::{self, AgentContext, ChatMessage};
@@ -169,6 +170,7 @@ impl ParaApp {
         v_flex()
             .size_full()
             .bg(cx.theme().sidebar)
+            .child(title_bar_inset())
             .child(
                 div()
                     .flex_1()
@@ -210,6 +212,7 @@ impl ParaApp {
         v_flex()
             .size_full()
             .bg(cx.theme().background)
+            .child(title_bar_inset())
             .child(self.render_tab_bar(cx))
             .child(div().id("markdown-preview").flex_1().min_h_0().map(|this| {
                 match self.tabs.get(self.active_tab) {
@@ -307,6 +310,7 @@ impl ParaApp {
         v_flex()
             .size_full()
             .bg(cx.theme().sidebar)
+            .child(title_bar_inset())
             .child(
                 div()
                     .id("agent-transcript")
@@ -350,25 +354,49 @@ impl Render for ParaApp {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         div()
             .id("para-workspace")
+            .relative()
             .size_full()
             .bg(cx.theme().background)
             .child(
-                h_resizable("para-workspace")
-                    .child(
-                        resizable_panel()
-                            .size(px(260.))
-                            .size_range(px(180.)..px(420.))
-                            .child(self.render_file_tree(cx)),
-                    )
-                    .child(resizable_panel().child(self.render_preview(cx)))
-                    .child(
-                        resizable_panel()
-                            .size(px(320.))
-                            .size_range(px(240.)..px(480.))
-                            .child(self.render_chat(cx)),
-                    ),
+                div().size_full().child(
+                    h_resizable("para-workspace")
+                        .child(
+                            resizable_panel()
+                                .size(px(260.))
+                                .size_range(px(180.)..px(420.))
+                                .child(self.render_file_tree(cx)),
+                        )
+                        .child(resizable_panel().child(self.render_preview(cx)))
+                        .child(
+                            resizable_panel()
+                                .size(px(320.))
+                                .size_range(px(240.)..px(480.))
+                                .child(self.render_chat(cx)),
+                        ),
+                ),
             )
+            .child(render_transparent_title_bar(cx))
     }
+}
+
+/// Empty strip so column colors fill the title-bar zone behind the overlay.
+fn title_bar_inset() -> impl IntoElement {
+    div().w_full().h(TITLE_BAR_HEIGHT).flex_shrink_0()
+}
+
+fn render_transparent_title_bar(cx: &mut App) -> impl IntoElement {
+    div()
+        .id("para-title-bar")
+        .absolute()
+        .top_0()
+        .left_0()
+        .right_0()
+        .h(TITLE_BAR_HEIGHT)
+        .child(
+            TitleBar::new()
+                .bg(cx.theme().transparent)
+                .border_color(cx.theme().transparent),
+        )
 }
 
 fn tree_icon(is_folder: bool, expanded: bool, kind: vault::ParaKind) -> IconName {

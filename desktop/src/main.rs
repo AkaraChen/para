@@ -1,4 +1,5 @@
-use gpui::{WindowBounds, WindowOptions, px, size};
+use gpui::{WindowBounds, WindowDecorations, WindowOptions, px, size};
+use gpui_component::TitleBar;
 use gpui_component_assets::Assets;
 
 mod agent;
@@ -13,10 +14,13 @@ fn main() {
     app.run(move |cx| {
         gpui_component::init(cx);
 
+        // Client decorations hide the OS chrome so our transparent TitleBar can
+        // sit on top of the three columns and let their colors show through.
         let window_options = WindowOptions {
             window_bounds: Some(WindowBounds::centered(size(px(1280.), px(800.)), cx)),
             window_min_size: Some(size(px(880.), px(560.))),
-            ..Default::default()
+            window_decorations: Some(WindowDecorations::Client),
+            ..TitleBar::window_options()
         };
 
         cx.spawn(async move |cx| {
