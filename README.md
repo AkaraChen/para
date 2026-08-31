@@ -98,6 +98,17 @@ go generate ./...
 
 Do not edit `cmd/para` by hand. It is generated-owned.
 
+## Desktop preview
+
+[`desktop/`](desktop/) is a GPUI app that opens a vault: file tree, multi-tab read-only markdown, and a local PARA filing chat.
+
+```bash
+cd desktop
+cargo run -- example-vault
+```
+
+See [desktop/README.md](desktop/README.md). The CLI remains the writer.
+
 ## Local build
 
 ```bash

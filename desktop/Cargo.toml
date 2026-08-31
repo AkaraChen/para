@@ -1,0 +1,15 @@
+[package]
+name = "para"
+description = "PARA markdown preview: file tree, multi-tab readonly preview, and an agent chat."
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+publish = false
+default-run = "para"
+
+[dependencies]
+anyhow = "1"
+gpui = { git = "https://github.com/zed-industries/zed" }
+gpui-component = { git = "https://github.com/longbridge/gpui-component" }
+gpui-component-assets = { git = "https://github.com/longbridge/gpui-component" }
+gpui_platform = { git = "https://github.com/zed-industries/zed", features = ["font-kit"] }
