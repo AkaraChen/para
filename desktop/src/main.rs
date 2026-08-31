@@ -1,11 +1,13 @@
 use gpui::{
-    TitlebarOptions, WindowBounds, WindowDecorations, WindowOptions, point, px, size,
+    TitlebarOptions, WindowBackgroundAppearance, WindowBounds, WindowDecorations, WindowOptions,
+    point, px, size,
 };
 use gpui_component_assets::Assets;
 
 mod agent;
 mod app;
 mod chat;
+mod chrome;
 mod preview;
 mod vault;
 
@@ -15,18 +17,25 @@ fn main() {
     app.run(move |cx| {
         gpui_component::init(cx);
 
-        // Server decorations keep the window manager frame (rounded corners,
-        // native titlebar). Same idea as egoist/waku: do not request CSD.
         let window_options = WindowOptions {
             titlebar: Some(TitlebarOptions {
                 title: Some("para".into()),
                 appears_transparent: true,
-                traffic_light_position: Some(point(px(12.0), px(10.0))),
+                traffic_light_position: Some(point(px(16.0), px(17.0))),
             }),
+            // Waku: the app owns titlebar gestures so header controls work.
+            is_movable: false,
             window_bounds: Some(WindowBounds::centered(size(px(1280.), px(800.)), cx)),
             window_min_size: Some(size(px(880.), px(560.))),
-            window_decorations: Some(WindowDecorations::Server),
             app_owns_titlebar_drag: true,
+            #[cfg(target_os = "macos")]
+            window_background: WindowBackgroundAppearance::Blurred,
+            // Linux cannot recolor the WM titlebar. Draw our own gray bar
+            // and rounded frame instead.
+            #[cfg(not(target_os = "macos"))]
+            window_decorations: Some(WindowDecorations::Client),
+            #[cfg(not(target_os = "macos"))]
+            window_background: WindowBackgroundAppearance::Transparent,
             ..Default::default()
         };
 

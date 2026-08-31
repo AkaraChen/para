@@ -2,8 +2,7 @@ use std::path::PathBuf;
 
 use gpui::{
     div, prelude::FluentBuilder as _, px, App, AppContext as _, Context, Entity, FontWeight,
-    InteractiveElement as _, IntoElement, MouseButton, ParentElement as _, Render, Styled,
-    Subscription, Window, WindowControlArea,
+    InteractiveElement as _, IntoElement, ParentElement as _, Render, Styled, Subscription, Window,
 };
 use gpui_component::{
     button::{Button, ButtonVariants as _},
@@ -14,12 +13,12 @@ use gpui_component::{
     scroll::ScrollableElement as _,
     tab::{Tab, TabBar},
     tree::{tree, TreeState},
-    v_flex, ActiveTheme as _, Icon, IconName, InteractiveElementExt as _, Root, Sizable, Theme,
-    ThemeMode, TITLE_BAR_HEIGHT,
+    v_flex, ActiveTheme as _, Icon, IconName, Root, Sizable, Theme, ThemeMode,
 };
 
 use crate::agent::{self, AgentContext, ChatMessage};
 use crate::chat;
+use crate::chrome;
 use crate::preview;
 use crate::vault::{self, OpenTab};
 
@@ -170,6 +169,8 @@ impl ParaApp {
         v_flex()
             .size_full()
             .bg(cx.theme().sidebar)
+            .rounded_tl(chrome::WINDOW_RADIUS)
+            .rounded_bl(chrome::WINDOW_RADIUS)
             .child(self.render_app_title(cx))
             .child(
                 div()
@@ -209,25 +210,8 @@ impl ParaApp {
     }
 
     fn render_app_title(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        h_flex()
-            .id("para-app-title")
-            .h(TITLE_BAR_HEIGHT)
-            .w_full()
-            .flex_shrink_0()
-            .items_center()
-            .when(cfg!(target_os = "macos"), |this| this.pl(px(76.)))
-            .when(!cfg!(target_os = "macos"), |this| this.pl_3())
-            .window_control_area(WindowControlArea::Drag)
-            .on_mouse_down(MouseButton::Left, |_, window, _| {
-                window.start_window_move();
-            })
-            .on_double_click(|_, window, _| {
-                if cfg!(target_os = "macos") {
-                    window.titlebar_double_click();
-                } else {
-                    window.zoom_window();
-                }
-            })
+        chrome::title_row("para-app-title")
+            .child(chrome::title_leading_chrome())
             .child(
                 div()
                     .text_sm()
@@ -263,7 +247,7 @@ impl ParaApp {
     fn render_tab_bar(&self, cx: &mut Context<Self>) -> impl IntoElement {
         if self.tabs.is_empty() {
             return h_flex()
-                .h(TITLE_BAR_HEIGHT)
+                .h(chrome::HEADER_HEIGHT)
                 .px_3()
                 .bg(cx.theme().sidebar)
                 .items_center()
@@ -281,7 +265,7 @@ impl ParaApp {
         // Same sidebar gray as the window title row; only the active tab is white.
         div()
             .w_full()
-            .h(TITLE_BAR_HEIGHT)
+            .h(chrome::HEADER_HEIGHT)
             .pl_4()
             .bg(cx.theme().sidebar)
             .child(
@@ -342,7 +326,9 @@ impl ParaApp {
         v_flex()
             .size_full()
             .bg(cx.theme().sidebar)
-            .child(div().w_full().h(TITLE_BAR_HEIGHT).flex_shrink_0())
+            .rounded_tr(chrome::WINDOW_RADIUS)
+            .rounded_br(chrome::WINDOW_RADIUS)
+            .child(chrome::title_row("chat-title-drag"))
             .child(
                 div()
                     .id("agent-transcript")
@@ -383,27 +369,23 @@ impl ParaApp {
 }
 
 impl Render for ParaApp {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        div()
-            .id("para-workspace")
-            .size_full()
-            .bg(cx.theme().sidebar)
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        chrome::prepare_frame(window);
+        let workspace = h_resizable("para-workspace")
             .child(
-                h_resizable("para-workspace")
-                    .child(
-                        resizable_panel()
-                            .size(px(260.))
-                            .size_range(px(180.)..px(420.))
-                            .child(self.render_file_tree(cx)),
-                    )
-                    .child(resizable_panel().child(self.render_preview(cx)))
-                    .child(
-                        resizable_panel()
-                            .size(px(320.))
-                            .size_range(px(240.)..px(480.))
-                            .child(self.render_chat(cx)),
-                    ),
+                resizable_panel()
+                    .size(px(260.))
+                    .size_range(px(180.)..px(420.))
+                    .child(self.render_file_tree(cx)),
             )
+            .child(resizable_panel().child(self.render_preview(cx)))
+            .child(
+                resizable_panel()
+                    .size(px(320.))
+                    .size_range(px(240.)..px(480.))
+                    .child(self.render_chat(cx)),
+            );
+        chrome::window_frame(cx, workspace)
     }
 }
 
@@ -429,5 +411,12 @@ fn tree_icon(is_folder: bool, expanded: bool, kind: vault::ParaKind) -> IconName
 
 pub fn open_root(window: &mut Window, cx: &mut App) -> Entity<Root> {
     let view = cx.new(|cx| ParaApp::new(window, cx));
-    cx.new(|cx| Root::new(view, window, cx).bordered(false))
+    cx.new(|cx| {
+        let root = Root::new(view, window, cx).bordered(false);
+        if chrome::paints_own_frame() {
+            root.bg(cx.theme().transparent)
+        } else {
+            root
+        }
+    })
 }
