@@ -1,4 +1,6 @@
-use gpui::{WindowBounds, WindowDecorations, WindowOptions, px, size};
+use gpui::{
+    WindowBackgroundAppearance, WindowBounds, WindowDecorations, WindowOptions, px, size,
+};
 use gpui_component::TitleBar;
 use gpui_component_assets::Assets;
 
@@ -14,11 +16,12 @@ fn main() {
     app.run(move |cx| {
         gpui_component::init(cx);
 
-        // Client decorations hide the OS chrome so our transparent TitleBar can
-        // sit on top of the three columns and let their colors show through.
+        // Client decorations hide the OS title chrome. The window stays
+        // transparent so our rounded frame can show through the corners.
         let window_options = WindowOptions {
             window_bounds: Some(WindowBounds::centered(size(px(1280.), px(800.)), cx)),
             window_min_size: Some(size(px(880.), px(560.))),
+            window_background: WindowBackgroundAppearance::Transparent,
             window_decorations: Some(WindowDecorations::Client),
             ..TitleBar::window_options()
         };
