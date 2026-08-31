@@ -1,6 +1,6 @@
 # para desktop
 
-A [GPUI](https://www.gpui.rs/) + [gpui-component](https://longbridge.github.io/gpui-component/) preview for a PARA vault.
+A [GPUI](https://www.gpui.rs/) + [Bezel](https://bezel.gallery/) preview for a PARA vault.
 
 ```text
 ┌────────────┬──────────────────────────┬─────────────────┐
@@ -9,7 +9,7 @@ A [GPUI](https://www.gpui.rs/) + [gpui-component](https://longbridge.github.io/g
 ```
 
 - **Left:** file tree of `INBOX.md`, `INDEX.md`, `Projects/`, `Areas/`, `Resources/`, `Archives/`
-- **Center:** multi-tab markdown preview (`TextView`, selectable, not editable)
+- **Center:** multi-tab markdown preview (Bezel `markdown`, selectable, not editable)
 - **Right:** local PARA filing assistant (classifies notes, review checklist, CLI sketches)
 
 This app does not write the vault. Use the `para` CLI to capture and file.
@@ -17,7 +17,7 @@ This app does not write the vault. Use the `para` CLI to capture and file.
 ## Requirements
 
 - Rust 1.98+ (pinned in `rust-toolchain.toml`)
-- Linux, macOS, or Windows with the [gpui-component system deps](https://longbridge.github.io/gpui-component/docs/installation)
+- Linux, macOS, or Windows with the usual GPUI system deps
 - On Debian/Ubuntu: `libxkbcommon-dev libwayland-dev libvulkan-dev libssl-dev libfontconfig-dev libfreetype-dev`
 
 ## Run

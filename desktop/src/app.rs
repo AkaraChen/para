@@ -1,78 +1,81 @@
+use std::collections::HashSet;
 use std::path::PathBuf;
 
-use gpui::{
-    div, prelude::FluentBuilder as _, px, App, AppContext as _, Context, Entity, FontWeight,
-    InteractiveElement as _, IntoElement, ParentElement as _, Render, Styled, Subscription, Window,
+use bezel::gpui::{
+    div, prelude::FluentBuilder as _, relative, px, AnyElement, App, AppContext as _, Axis,
+    Context, DragMoveEvent, Entity, FontWeight, InteractiveElement as _, IntoElement,
+    ParentElement as _, Render, StatefulInteractiveElement as _, Styled, Window,
 };
-use gpui_component::{
-    button::{Button, ButtonVariants as _},
-    h_flex,
-    input::{Input, InputEvent, InputState},
-    list::ListItem,
-    resizable::{h_resizable, resizable_panel},
-    scroll::ScrollableElement as _,
-    tab::{Tab, TabBar},
-    tree::{tree, TreeState},
-    v_flex, ActiveTheme as _, Icon, IconName, Root, Sizable, Theme, ThemeMode,
+use bezel::theme::{
+    appearance::{self, AppearanceMode},
+    Appearance, Theme,
+};
+use bezel::ui::{
+    icons,
+    input::TextField,
+    titlebar::DragState,
+    tree::{self, Row},
+    widgets::{axis_fraction, ButtonStyle, Buttons, Layout, SplitDrag, SplitStyle},
 };
 
 use crate::agent::{self, AgentContext, ChatMessage};
 use crate::chat;
 use crate::chrome;
 use crate::preview;
-use crate::vault::{self, OpenTab};
+use crate::vault::{self, FlatRow, OpenTab, VaultNode};
+use crate::SendChat;
 
 pub struct ParaApp {
     vault_root: PathBuf,
-    tree_state: Entity<TreeState>,
+    tree: Vec<VaultNode>,
+    open_folders: HashSet<PathBuf>,
+    selected: Option<PathBuf>,
+    cursor: usize,
     tabs: Vec<OpenTab>,
     active_tab: usize,
     messages: Vec<ChatMessage>,
-    chat_input: Entity<InputState>,
-    _subscriptions: Vec<Subscription>,
+    chat_input: Entity<TextField>,
+    drag: DragState,
+    left_frac: f32,
+    chat_frac: f32,
+    left_dragging: bool,
+    chat_dragging: bool,
 }
 
 impl ParaApp {
-    pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
+    pub fn new(_window: &mut Window, cx: &mut Context<Self>) -> Self {
         let vault_root = vault::resolve_root();
-        let items = vault::scan_tree(&vault_root);
-        let tree_state = cx.new(|cx| TreeState::new(cx).items(items));
+        let tree = vault::scan_tree(&vault_root);
+        let open_folders = vault::default_open_folders(&tree);
         let chat_input = cx.new(|cx| {
-            InputState::new(window, cx).placeholder("Ask to classify, review, or file a note…")
+            TextField::new(cx)
+                .with_placeholder("Ask to classify, review, or file a note…")
+                .with_key_context("Composer")
         });
 
         let mut app = Self {
             vault_root: vault_root.clone(),
-            tree_state: tree_state.clone(),
+            tree,
+            open_folders,
+            selected: None,
+            cursor: 0,
             tabs: Vec::new(),
             active_tab: 0,
             messages: Vec::new(),
-            chat_input: chat_input.clone(),
-            _subscriptions: Vec::new(),
+            chat_input,
+            drag: DragState::default(),
+            left_frac: 0.22,
+            chat_frac: 0.32,
+            left_dragging: false,
+            chat_dragging: false,
         };
 
         if let Some(path) = vault::default_open_path(&vault_root) {
+            app.selected = Some(path.clone());
             app.open_path(path, cx);
         }
         app.messages
             .push(ChatMessage::assistant(agent::welcome(&app.agent_context())));
-
-        app._subscriptions = vec![
-            cx.observe(&tree_state, |this, tree, cx| {
-                let selected = tree
-                    .read(cx)
-                    .selected_item()
-                    .map(|item| PathBuf::from(item.id.as_str()));
-                if let Some(path) = selected {
-                    this.open_path_if_markdown(path, cx);
-                }
-            }),
-            cx.subscribe_in(&chat_input, window, |this, _, event, window, cx| {
-                if matches!(event, InputEvent::PressEnter { .. }) {
-                    this.send_chat(window, cx);
-                }
-            }),
-        ];
 
         app
     }
@@ -88,10 +91,8 @@ impl ParaApp {
         }
     }
 
-    fn open_path_if_markdown(&mut self, path: PathBuf, cx: &mut Context<Self>) {
-        if path.is_file() && vault::is_markdown(&path) {
-            self.open_path(path, cx);
-        }
+    fn flat_rows(&self) -> Vec<FlatRow> {
+        vault::flatten(&self.tree, &self.open_folders)
     }
 
     fn open_path(&mut self, path: PathBuf, cx: &mut Context<Self>) {
@@ -116,6 +117,27 @@ impl ParaApp {
         }
     }
 
+    fn activate_row(&mut self, index: usize, cx: &mut Context<Self>) {
+        let rows = self.flat_rows();
+        let Some(row) = rows.get(index) else {
+            return;
+        };
+        self.cursor = index;
+        self.selected = Some(row.path.clone());
+        if row.is_dir {
+            if self.open_folders.contains(&row.path) {
+                self.open_folders.remove(&row.path);
+            } else {
+                self.open_folders.insert(row.path.clone());
+            }
+            cx.notify();
+            return;
+        }
+        if vault::is_markdown(&row.path) {
+            self.open_path(row.path.clone(), cx);
+        }
+    }
+
     fn close_tab(&mut self, index: usize, cx: &mut Context<Self>) {
         if index >= self.tabs.len() {
             return;
@@ -132,234 +154,294 @@ impl ParaApp {
     }
 
     fn refresh_tree(&mut self, cx: &mut Context<Self>) {
-        let items = vault::scan_tree(&self.vault_root);
-        self.tree_state.update(cx, |state, cx| {
-            state.set_items(items, cx);
-        });
+        self.tree = vault::scan_tree(&self.vault_root);
+        let still: HashSet<PathBuf> = self
+            .tree
+            .iter()
+            .flat_map(walk_paths)
+            .collect();
+        self.open_folders.retain(|path| still.contains(path));
+        for folder in vault::default_open_folders(&self.tree) {
+            self.open_folders.insert(folder);
+        }
         cx.notify();
     }
 
-    fn send_chat(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let text = self.chat_input.read(cx).value().trim().to_string();
+    fn send_chat(&mut self, cx: &mut Context<Self>) {
+        let text = self.chat_input.read(cx).content().trim().to_string();
         if text.is_empty() {
             return;
         }
-
-        self.chat_input.update(cx, |state, cx| {
-            state.set_value("", window, cx);
-        });
-
+        self.chat_input.update(cx, |field, cx| field.clear(cx));
         self.messages.push(ChatMessage::user(text.clone()));
         let reply = agent::reply(&text, &self.agent_context());
         self.messages.push(ChatMessage::assistant(reply));
         cx.notify();
     }
 
-    fn toggle_theme(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let next = if Theme::global(cx).is_dark() {
-            ThemeMode::Light
-        } else {
-            ThemeMode::Dark
-        };
-        Theme::change(next, Some(window), cx);
+    fn toggle_theme(&mut self, cx: &mut Context<Self>) {
+        let dark = matches!(Theme::of(cx).appearance, Appearance::Dark);
+        appearance::set_mode(
+            if dark {
+                AppearanceMode::Light
+            } else {
+                AppearanceMode::Dark
+            },
+            cx,
+        );
         cx.notify();
     }
 
-    fn render_file_tree(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        v_flex()
-            .size_full()
-            .bg(cx.theme().sidebar)
-            .rounded_tl(chrome::WINDOW_RADIUS)
-            .rounded_bl(chrome::WINDOW_RADIUS)
-            .child(self.render_app_title(cx))
-            .child(
-                div()
-                    .flex_1()
-                    .min_h_0()
-                    .px_1()
-                    .pt_2()
-                    .pb_1()
-                    .child(tree(&self.tree_state, {
-                        let root = self.vault_root.clone();
-                        move |ix, entry, selected, _window, cx| {
-                            let item = entry.item();
-                            let path = PathBuf::from(item.id.as_str());
-                            let kind = vault::classify_path(&root, &path);
-                            let icon = tree_icon(entry.is_folder(), entry.is_expanded(), kind);
-
-                            ListItem::new(("vault-item", ix))
-                                .selected(selected)
-                                .pl(px(12.) + px(14.) * entry.depth() as f32)
-                                .py_1()
-                                .child(
-                                    h_flex()
-                                        .items_center()
-                                        .gap_2()
-                                        .w_full()
-                                        .min_w_0()
-                                        .child(
-                                            Icon::new(icon).text_color(cx.theme().muted_foreground),
-                                        )
-                                        .child(
-                                            div().text_sm().truncate().child(item.label.clone()),
-                                        ),
-                                )
-                        }
-                    })),
-            )
-    }
-
-    fn render_app_title(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        chrome::title_row("para-app-title")
+    fn render_app_title(&self, theme: &Theme, window: &Window) -> impl IntoElement + use<> {
+        chrome::title_row("para-app-title", &self.drag, cfg!(target_os = "macos"), window)
             .child(chrome::title_leading_chrome())
             .child(
                 div()
-                    .text_sm()
+                    .text_size(px(13.))
                     .font_weight(FontWeight::MEDIUM)
-                    .text_color(cx.theme().foreground)
+                    .text_color(theme.text)
                     .child("para"),
             )
     }
 
-    fn render_preview(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        v_flex()
+    fn render_file_tree(
+        &self,
+        theme: &Theme,
+        window: &Window,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement + use<> {
+        let rows = self.flat_rows();
+        let selected = self.selected.clone();
+        let cursor = self.cursor;
+        let vault_root = self.vault_root.clone();
+
+        div()
             .size_full()
-            .bg(cx.theme().sidebar)
-            .child(self.render_tab_bar(cx))
+            .flex()
+            .flex_col()
+            .bg(theme.surface)
+            .rounded_tl(chrome::WINDOW_RADIUS)
+            .rounded_bl(chrome::WINDOW_RADIUS)
+            .child(self.render_app_title(theme, window))
+            .child(
+                div()
+                    .id("file-tree")
+                    .flex_1()
+                    .min_h_0()
+                    .px(px(4.))
+                    .pt(px(8.))
+                    .pb(px(4.))
+                    .overflow_y_scroll()
+                    .child(tree::tree().children({
+                        let items: Vec<AnyElement> = rows
+                            .iter()
+                            .enumerate()
+                            .map(|(index, row)| {
+                                let path = row.path.clone();
+                                let is_selected = selected.as_ref() == Some(&path);
+                                tree::tree_row(
+                                    theme,
+                                    &Row {
+                                        depth: row.depth,
+                                        expanded: row.expanded,
+                                    },
+                                    is_selected,
+                                    cursor == index,
+                                )
+                                .id(("vault-item", index))
+                                .child(
+                                    div()
+                                        .flex()
+                                        .flex_row()
+                                        .items_center()
+                                        .gap(px(6.))
+                                        .min_w_0()
+                                        .child(
+                                            icons::icon(tree_icon(
+                                                row.is_dir,
+                                                row.expanded,
+                                                &vault_root,
+                                                &path,
+                                            ))
+                                            .size(px(14.))
+                                            .text_color(theme.text_muted),
+                                        )
+                                        .child(
+                                            div().min_w_0().truncate().child(row.label.clone()),
+                                        ),
+                                )
+                                .on_click(cx.listener(move |this, _, _, cx| {
+                                    this.activate_row(index, cx)
+                                }))
+                                .into_any_element()
+                            })
+                            .collect();
+                        items
+                    })),
+            )
+    }
+
+    fn render_tab_bar(&self, theme: &Theme, cx: &mut Context<Self>) -> impl IntoElement + use<> {
+        let mut bar = theme
+            .tab_bar()
+            .w_full()
+            .h(px(Theme::TITLEBAR_HEIGHT))
+            .px(px(12.))
+            .bg(theme.surface);
+
+        if self.tabs.is_empty() {
+            bar = bar.child(
+                div()
+                    .flex_1()
+                    .text_size(px(12.))
+                    .text_color(theme.text_muted)
+                    .child("No open notes"),
+            );
+        } else {
+            for (index, tab) in self.tabs.iter().enumerate() {
+                let active = index == self.active_tab;
+                bar = bar.child(
+                    theme
+                        .tab(tab.title.clone(), active)
+                        .id(("preview-tab", index))
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            this.active_tab = index;
+                            cx.notify();
+                        }))
+                        .child(
+                            div()
+                                .id(("close-tab", index))
+                                .ml(px(4.))
+                                .p(px(2.))
+                                .cursor_pointer()
+                                .child(
+                                    icons::icon(icons::CLOSE)
+                                        .size(px(10.))
+                                        .text_color(theme.text_faint),
+                                )
+                                .on_click(cx.listener(move |this, _, _, cx| {
+                                    this.close_tab(index, cx);
+                                })),
+                        ),
+                );
+            }
+            bar = bar.child(div().flex_1());
+        }
+
+        bar.child(self.render_workspace_controls(theme, cx))
+    }
+
+    fn render_workspace_controls(
+        &self,
+        theme: &Theme,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement + use<> {
+        let dark = matches!(theme.appearance, Appearance::Dark);
+        div()
+            .flex()
+            .flex_row()
+            .items_center()
+            .gap(px(4.))
+            .pr(px(8.))
+            .child(
+                div()
+                    .id("refresh-tree")
+                    .p(px(4.))
+                    .cursor_pointer()
+                    .child(
+                        icons::icon(icons::REFRESH)
+                            .size(px(14.))
+                            .text_color(theme.text_muted),
+                    )
+                    .on_click(cx.listener(|this, _, _, cx| this.refresh_tree(cx))),
+            )
+            .child(
+                div()
+                    .id("toggle-theme")
+                    .p(px(4.))
+                    .cursor_pointer()
+                    .child(
+                        icons::icon(if dark { icons::SUN } else { icons::MOON })
+                            .size(px(14.))
+                            .text_color(theme.text_muted),
+                    )
+                    .on_click(cx.listener(|this, _, _, cx| this.toggle_theme(cx))),
+            )
+    }
+
+    fn render_preview(
+        &self,
+        theme: &Theme,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement + use<> {
+        div()
+            .size_full()
+            .flex()
+            .flex_col()
+            .bg(theme.surface)
+            .child(self.render_tab_bar(theme, cx))
             .child(
                 div()
                     .id("markdown-preview")
                     .flex_1()
                     .min_h_0()
-                    .bg(cx.theme().background)
+                    .bg(theme.bg)
                     .map(|this| match self.tabs.get(self.active_tab) {
-                        Some(tab) => this.child(preview::render_note(tab)),
-                        None => this.p_5().child(preview::empty_state(
-                            cx,
-                            IconName::File,
-                            "Open a markdown file",
-                            "Pick a note in the vault tree. Preview is read-only.",
-                        )),
+                        Some(tab) => this.child(preview::render_note(tab, window, cx)),
+                        None => this.child(preview::empty_state(cx)),
                     }),
             )
     }
 
-    fn render_tab_bar(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        if self.tabs.is_empty() {
-            return h_flex()
-                .h(chrome::HEADER_HEIGHT)
-                .px_3()
-                .bg(cx.theme().sidebar)
-                .items_center()
-                .child(
-                    div()
-                        .flex_1()
-                        .text_xs()
-                        .text_color(cx.theme().muted_foreground)
-                        .child("No open notes"),
-                )
-                .child(self.render_workspace_controls(cx))
-                .into_any_element();
-        }
+    fn render_chat(
+        &self,
+        theme: &Theme,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement + use<> {
+        let bubbles: Vec<AnyElement> = self
+            .messages
+            .iter()
+            .enumerate()
+            .map(|(index, message)| chat::bubble(index, message, window, cx))
+            .collect();
 
-        // Same 32px sidebar-gray strip as the side title rows; only the
-        // active tab is white.
-        TabBar::new("preview-tabs")
-            .w_full()
-            .h(chrome::HEADER_HEIGHT)
-            .pl_4()
-            .bg(cx.theme().sidebar)
-            .menu(true)
-            .max_width(px(180.))
-            .suffix(self.render_workspace_controls(cx))
-            .selected_index(self.active_tab)
-            .on_click(cx.listener(|this, index, _, cx| {
-                this.active_tab = *index;
-                cx.notify();
-            }))
-            .children(self.tabs.iter().enumerate().map(|(index, tab)| {
-                Tab::new().label(tab.title.clone()).suffix(
-                    Button::new(("close-tab", index))
-                        .ghost()
-                        .xsmall()
-                        .icon(IconName::Close)
-                        .tooltip("Close tab")
-                        .on_click(cx.listener(move |this, _, _, cx| {
-                            this.close_tab(index, cx);
-                        })),
-                )
-            }))
-            .into_any_element()
-    }
-
-    fn render_workspace_controls(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        h_flex()
-            .items_center()
-            .gap_1()
-            .pr_2()
-            .child(
-                Button::new("refresh-tree")
-                    .ghost()
-                    .xsmall()
-                    .icon(IconName::Undo2)
-                    .tooltip("Reload the file tree")
-                    .on_click(cx.listener(|this, _, _, cx| this.refresh_tree(cx))),
-            )
-            .child(
-                Button::new("toggle-theme")
-                    .ghost()
-                    .xsmall()
-                    .icon(if Theme::global(cx).is_dark() {
-                        IconName::Sun
-                    } else {
-                        IconName::Moon
-                    })
-                    .tooltip("Toggle light / dark")
-                    .on_click(cx.listener(|this, _, window, cx| this.toggle_theme(window, cx))),
-            )
-    }
-
-    fn render_chat(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        v_flex()
+        div()
             .size_full()
-            .bg(cx.theme().sidebar)
+            .flex()
+            .flex_col()
+            .bg(theme.surface)
             .rounded_tr(chrome::WINDOW_RADIUS)
             .rounded_br(chrome::WINDOW_RADIUS)
-            .child(chrome::title_row("chat-title-drag"))
+            .child(chrome::title_row("chat-title-drag", &self.drag, false, window))
             .child(
                 div()
                     .id("agent-transcript")
                     .flex_1()
                     .min_h_0()
-                    .px_3()
-                    .pt_4()
-                    .pb_3()
-                    .overflow_y_scrollbar()
-                    .child(
-                        v_flex().gap_3().children(
-                            self.messages
-                                .iter()
-                                .enumerate()
-                                .map(|(index, message)| chat::bubble(index, message, cx)),
-                        ),
-                    ),
+                    .px(px(12.))
+                    .pt(px(16.))
+                    .pb(px(12.))
+                    .overflow_y_scroll()
+                    .child(div().flex().flex_col().gap(px(12.)).children(bubbles)),
             )
             .child(
-                h_flex()
-                    .p_3()
-                    .gap_2()
+                div()
+                    .p(px(12.))
+                    .flex()
+                    .flex_row()
+                    .gap(px(8.))
                     .items_end()
                     .border_t_1()
-                    .border_color(cx.theme().border)
-                    .child(div().flex_1().child(Input::new(&self.chat_input)))
+                    .border_color(theme.border)
+                    .on_action(cx.listener(|this, _: &SendChat, _, cx| this.send_chat(cx)))
+                    .child(div().flex_1().child(self.chat_input.clone()))
                     .child(
-                        Button::new("send-chat")
-                            .primary()
-                            .icon(IconName::ArrowUp)
-                            .tooltip("Send")
-                            .on_click(cx.listener(|this, _, window, cx| {
-                                this.send_chat(window, cx);
-                            })),
+                        theme
+                            .button("Send", ButtonStyle::Prominent, None)
+                            .id("send-chat")
+                            .on_click(cx.listener(|this, _, _, cx| this.send_chat(cx))),
                     ),
             )
     }
@@ -368,52 +450,116 @@ impl ParaApp {
 impl Render for ParaApp {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         chrome::prepare_frame(window);
-        let workspace = h_resizable("para-workspace")
+        let theme = Theme::of(cx).clone();
+
+        let left = self.render_file_tree(&theme, window, cx);
+        let preview = self.render_preview(&theme, window, cx);
+        let chat = self.render_chat(&theme, window, cx);
+        let left_dragging = self.left_dragging;
+        let chat_dragging = self.chat_dragging;
+
+        let workspace = div()
+            .id("para-splits")
+            .size_full()
+            .flex()
+            .flex_row()
+            .on_drag_move(cx.listener(
+                |this, event: &DragMoveEvent<SplitDrag>, _, cx| {
+                    this.left_frac = axis_fraction(
+                        event.event.position,
+                        event.bounds,
+                        Axis::Horizontal,
+                        0.14,
+                    );
+                    this.left_dragging = true;
+                    cx.notify();
+                },
+            ))
+            .on_mouse_up(bezel::gpui::MouseButton::Left, cx.listener(|this, _, _, cx| {
+                this.left_dragging = false;
+                this.chat_dragging = false;
+                cx.notify();
+            }))
+            .child(div().w(relative(self.left_frac)).h_full().child(left))
             .child(
-                resizable_panel()
-                    .size(px(260.))
-                    .size_range(px(180.)..px(420.))
-                    .child(self.render_file_tree(cx)),
+                theme
+                    .split_handle(Axis::Horizontal, SplitStyle::Line { dragging: left_dragging })
+                    .id("left-split")
+                    .on_drag(SplitDrag, |_, _, _, cx| cx.new(|_| bezel::gpui::Empty)),
             )
-            .child(resizable_panel().child(self.render_preview(cx)))
             .child(
-                resizable_panel()
-                    .size(px(320.))
-                    .size_range(px(240.)..px(480.))
-                    .child(self.render_chat(cx)),
+                div()
+                    .id("para-right-split")
+                    .flex_1()
+                    .h_full()
+                    .flex()
+                    .flex_row()
+                    .min_w_0()
+                    .on_drag_move(cx.listener(
+                        |this, event: &DragMoveEvent<SplitDrag>, _, cx| {
+                            let frac = axis_fraction(
+                                event.event.position,
+                                event.bounds,
+                                Axis::Horizontal,
+                                0.22,
+                            );
+                            this.chat_frac = 1.0 - frac;
+                            this.chat_dragging = true;
+                            cx.notify();
+                        },
+                    ))
+                    .child(div().flex_1().min_w_0().h_full().child(preview))
+                    .child(
+                        theme
+                            .split_handle(
+                                Axis::Horizontal,
+                                SplitStyle::Line {
+                                    dragging: chat_dragging,
+                                },
+                            )
+                            .id("chat-split")
+                            .on_drag(SplitDrag, |_, _, _, cx| cx.new(|_| bezel::gpui::Empty)),
+                    )
+                    .child(div().w(relative(self.chat_frac)).h_full().child(chat)),
             );
+
         chrome::window_frame(cx, workspace)
     }
 }
 
-fn tree_icon(is_folder: bool, expanded: bool, kind: vault::ParaKind) -> IconName {
+fn walk_paths(node: &VaultNode) -> Vec<PathBuf> {
+    let mut paths = vec![node.path.clone()];
+    for child in &node.children {
+        paths.extend(walk_paths(child));
+    }
+    paths
+}
+
+fn tree_icon(
+    is_folder: bool,
+    expanded: Option<bool>,
+    root: &std::path::Path,
+    path: &std::path::Path,
+) -> &'static str {
     if is_folder {
-        return if expanded {
-            IconName::FolderOpen
+        return if expanded == Some(true) {
+            icons::FOLDER_WITH_FILES
         } else {
-            IconName::Folder
+            icons::FOLDER
         };
     }
 
-    match kind {
-        vault::ParaKind::Inbox => IconName::Inbox,
-        vault::ParaKind::Index => IconName::LayoutDashboard,
-        vault::ParaKind::Project => IconName::Frame,
-        vault::ParaKind::Area => IconName::Building2,
-        vault::ParaKind::Resource => IconName::BookOpen,
-        vault::ParaKind::Archive => IconName::FolderClosed,
-        vault::ParaKind::Note => IconName::File,
+    match vault::classify_path(root, path) {
+        vault::ParaKind::Inbox => icons::ARCHIVE_UP_MINIMALISTIC,
+        vault::ParaKind::Index => icons::WIDGET,
+        vault::ParaKind::Project => icons::CHECKLIST,
+        vault::ParaKind::Area => icons::GLOBAL,
+        vault::ParaKind::Resource => icons::BOOK,
+        vault::ParaKind::Archive => icons::ARCHIVE_MINIMALISTIC,
+        vault::ParaKind::Note => icons::DOCUMENT,
     }
 }
 
-pub fn open_root(window: &mut Window, cx: &mut App) -> Entity<Root> {
-    let view = cx.new(|cx| ParaApp::new(window, cx));
-    cx.new(|cx| {
-        let root = Root::new(view, window, cx).bordered(false);
-        if chrome::paints_own_frame() {
-            root.bg(cx.theme().transparent)
-        } else {
-            root
-        }
-    })
+pub fn open_root(window: &mut Window, cx: &mut App) -> Entity<ParaApp> {
+    cx.new(|cx| ParaApp::new(window, cx))
 }

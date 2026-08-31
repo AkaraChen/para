@@ -1,7 +1,23 @@
+use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use gpui_component::tree::TreeItem;
+#[derive(Debug, Clone)]
+pub struct VaultNode {
+    pub path: PathBuf,
+    pub label: String,
+    pub is_dir: bool,
+    pub children: Vec<VaultNode>,
+}
+
+#[derive(Debug, Clone)]
+pub struct FlatRow {
+    pub path: PathBuf,
+    pub label: String,
+    pub is_dir: bool,
+    pub depth: usize,
+    pub expanded: Option<bool>,
+}
 
 const SKIP_DIR_NAMES: &[&str] = &[
     ".git",
@@ -386,8 +402,47 @@ pub fn default_open_path(root: &Path) -> Option<PathBuf> {
     None
 }
 
-pub fn scan_tree(root: &Path) -> Vec<TreeItem> {
+pub fn scan_tree(root: &Path) -> Vec<VaultNode> {
     scan_dir(root, 0)
+}
+
+pub fn default_open_folders(nodes: &[VaultNode]) -> HashSet<PathBuf> {
+    nodes
+        .iter()
+        .filter(|node| node.is_dir && is_para_dir(&node.label))
+        .map(|node| node.path.clone())
+        .collect()
+}
+
+pub fn flatten(nodes: &[VaultNode], open: &HashSet<PathBuf>) -> Vec<FlatRow> {
+    let mut out = Vec::new();
+    flatten_into(nodes, 0, open, &mut out);
+    out
+}
+
+fn flatten_into(
+    nodes: &[VaultNode],
+    depth: usize,
+    open: &HashSet<PathBuf>,
+    out: &mut Vec<FlatRow>,
+) {
+    for node in nodes {
+        let expanded = if node.is_dir {
+            Some(open.contains(&node.path))
+        } else {
+            None
+        };
+        out.push(FlatRow {
+            path: node.path.clone(),
+            label: node.label.clone(),
+            is_dir: node.is_dir,
+            depth,
+            expanded,
+        });
+        if node.is_dir && open.contains(&node.path) {
+            flatten_into(&node.children, depth + 1, open, out);
+        }
+    }
 }
 
 pub fn vault_file_list(root: &Path) -> Vec<String> {
@@ -423,7 +478,7 @@ fn collect_markdown(root: &Path, dir: &Path, depth: usize, out: &mut Vec<String>
     }
 }
 
-fn scan_dir(dir: &Path, depth: usize) -> Vec<TreeItem> {
+fn scan_dir(dir: &Path, depth: usize) -> Vec<VaultNode> {
     if depth > MAX_DEPTH {
         return Vec::new();
     }
@@ -432,7 +487,7 @@ fn scan_dir(dir: &Path, depth: usize) -> Vec<TreeItem> {
         return Vec::new();
     };
 
-    let mut rows: Vec<(u8, String, TreeItem)> = Vec::new();
+    let mut rows: Vec<(u8, String, VaultNode)> = Vec::new();
     for entry in entries.flatten() {
         let path = entry.path();
         let name = file_name(&path);
@@ -448,13 +503,27 @@ fn scan_dir(dir: &Path, depth: usize) -> Vec<TreeItem> {
             if children.is_empty() && !is_para_dir(&name) {
                 continue;
             }
-            let item = TreeItem::new(path.to_string_lossy().to_string(), name.clone())
-                .expanded(depth == 0 && is_para_dir(&name))
-                .children(children);
-            rows.push((sort_rank(&name, true), name, item));
+            rows.push((
+                sort_rank(&name, true),
+                name.clone(),
+                VaultNode {
+                    path,
+                    label: name,
+                    is_dir: true,
+                    children,
+                },
+            ));
         } else if is_markdown(&path) {
-            let item = TreeItem::new(path.to_string_lossy().to_string(), name.clone());
-            rows.push((sort_rank(&name, false), name, item));
+            rows.push((
+                sort_rank(&name, false),
+                name.clone(),
+                VaultNode {
+                    path,
+                    label: name,
+                    is_dir: false,
+                    children: Vec::new(),
+                },
+            ));
         }
     }
 
