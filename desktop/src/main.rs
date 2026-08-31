@@ -21,7 +21,7 @@ fn main() {
             titlebar: Some(TitlebarOptions {
                 title: Some("para".into()),
                 appears_transparent: true,
-                traffic_light_position: Some(point(px(16.0), px(17.0))),
+                traffic_light_position: Some(point(px(12.0), px(10.0))),
             }),
             // Waku: the app owns titlebar gestures so header controls work.
             is_movable: false,

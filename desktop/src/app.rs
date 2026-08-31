@@ -262,14 +262,13 @@ impl ParaApp {
                 .into_any_element();
         }
 
-        // Fill the 48px title row with sidebar gray so TabBar's default 32px
-        // tab_bar fill cannot leave a lighter strip above the preview.
+        // Same 32px sidebar-gray strip as the side title rows; only the
+        // active tab is white.
         TabBar::new("preview-tabs")
             .w_full()
             .h(chrome::HEADER_HEIGHT)
             .pl_4()
             .bg(cx.theme().sidebar)
-            .items_end()
             .menu(true)
             .max_width(px(180.))
             .suffix(self.render_workspace_controls(cx))

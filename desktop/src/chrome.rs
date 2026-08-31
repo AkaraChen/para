@@ -5,8 +5,8 @@ use gpui::{
 };
 use gpui_component::{h_flex, ActiveTheme as _, InteractiveElementExt as _};
 
-/// Matches Waku's header so the macOS traffic lights sit in the same row.
-pub(crate) const HEADER_HEIGHT: Pixels = px(48.);
+/// Same height as a default Tab so the title row is one compact strip.
+pub(crate) const HEADER_HEIGHT: Pixels = px(32.);
 pub(crate) const WINDOW_RADIUS: Pixels = px(10.);
 const FRAME_SHADOW: Pixels = px(16.);
 const TRAFFIC_LIGHT_CLEARANCE: Pixels = px(86.);
