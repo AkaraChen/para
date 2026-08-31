@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use crate::vault::{classify_path, ParaKind};
+use crate::vault::{ParaKind, classify_path};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ChatRole {
@@ -56,11 +56,11 @@ pub fn reply(user: &str, ctx: &AgentContext) -> String {
         .as_ref()
         .map(|path| classify_path(&ctx.vault_root, path));
 
-    if looks_like_help(&lowered, user) {
-        return help(lang);
-    }
     if looks_like_review(&lowered, user) {
         return review(lang);
+    }
+    if looks_like_help(&lowered, user) {
+        return help(lang);
     }
     if looks_like_open_file(&lowered, user) {
         return current_note(lang, ctx, kind);
@@ -109,7 +109,10 @@ fn looks_like_help(lowered: &str, raw: &str) -> bool {
 }
 
 fn looks_like_review(lowered: &str, raw: &str) -> bool {
-    lowered.contains("review") || raw.contains("回顾") || raw.contains("复盘") || raw.contains("清理 inbox")
+    lowered.contains("review")
+        || raw.contains("回顾")
+        || raw.contains("复盘")
+        || raw.contains("清理 inbox")
 }
 
 fn looks_like_open_file(lowered: &str, raw: &str) -> bool {
@@ -262,14 +265,14 @@ fn classify(lang: Lang, user: &str, ctx: &AgentContext, open_kind: Option<ParaKi
             guessed.label(),
             snippet,
             advice(lang, guessed),
-            cli_for(guessed, snippet)
+            cli_for(guessed, &snippet)
         ),
         Lang::Zh => format!(
             "这条更像 **{}**。\n\n> {}\n\n{}\n\n可以用：\n```\n{}\n```",
             guessed.label(),
             snippet,
             advice(lang, guessed),
-            cli_for(guessed, snippet)
+            cli_for(guessed, &snippet)
         ),
     }
 }
@@ -318,7 +321,9 @@ fn advice(lang: Lang, kind: ParaKind) -> &'static str {
         (Lang::En, ParaKind::Resource) => {
             "References have a topic, not an owner or deadline. Archive when you stop using them."
         }
-        (Lang::Zh, ParaKind::Resource) => "Resource 是主题资料，没有负责人和截止日期。不用了再归档。",
+        (Lang::Zh, ParaKind::Resource) => {
+            "Resource 是主题资料，没有负责人和截止日期。不用了再归档。"
+        }
         (Lang::En, ParaKind::Archive) => {
             "Keep for search. Do not reopen it as a daily working note."
         }
@@ -326,7 +331,9 @@ fn advice(lang: Lang, kind: ParaKind) -> &'static str {
         (Lang::En, ParaKind::Note) => {
             "Not under a PARA folder yet. Decide: project, area, resource, or still inbox."
         }
-        (Lang::Zh, ParaKind::Note) => "还不在 PARA 目录里。先决定：项目、职责、资料，还是继续留在 inbox。",
+        (Lang::Zh, ParaKind::Note) => {
+            "还不在 PARA 目录里。先决定：项目、职责、资料，还是继续留在 inbox。"
+        }
     }
 }
 

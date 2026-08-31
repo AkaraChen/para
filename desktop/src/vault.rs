@@ -224,7 +224,10 @@ fn scan_dir(dir: &Path, depth: usize) -> Vec<TreeItem> {
         }
     }
 
-    rows.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.to_lowercase().cmp(&b.1.to_lowercase())));
+    rows.sort_by(|a, b| {
+        a.0.cmp(&b.0)
+            .then_with(|| a.1.to_lowercase().cmp(&b.1.to_lowercase()))
+    });
     rows.into_iter().map(|(_, _, item)| item).collect()
 }
 
@@ -282,7 +285,10 @@ mod tests {
     #[test]
     fn classifies_para_paths() {
         let root = Path::new("/notes");
-        assert_eq!(classify_path(root, Path::new("/notes/INBOX.md")), ParaKind::Inbox);
+        assert_eq!(
+            classify_path(root, Path::new("/notes/INBOX.md")),
+            ParaKind::Inbox
+        );
         assert_eq!(
             classify_path(root, Path::new("/notes/Projects/ship.md")),
             ParaKind::Project
@@ -291,7 +297,10 @@ mod tests {
             classify_path(root, Path::new("/notes/Resources/para-method.md")),
             ParaKind::Resource
         );
-        assert_eq!(classify_path(root, Path::new("/notes/scratch.md")), ParaKind::Note);
+        assert_eq!(
+            classify_path(root, Path::new("/notes/scratch.md")),
+            ParaKind::Note
+        );
     }
 
     #[test]

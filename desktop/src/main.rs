@@ -1,4 +1,4 @@
-use gpui::{px, size, WindowBounds, WindowOptions};
+use gpui::{WindowBounds, WindowOptions, px, size};
 use gpui_component::TitleBar;
 use gpui_component_assets::Assets;
 

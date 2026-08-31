@@ -16,8 +16,9 @@ This app does not write the vault. Use the `para` CLI to capture and file.
 
 ## Requirements
 
-- Rust 1.90+ (pinned in `rust-toolchain.toml`)
+- Rust 1.98+ (pinned in `rust-toolchain.toml`)
 - Linux, macOS, or Windows with the [gpui-component system deps](https://longbridge.github.io/gpui-component/docs/installation)
+- On Debian/Ubuntu: `libxkbcommon-dev libwayland-dev libvulkan-dev libssl-dev libfontconfig-dev libfreetype-dev`
 
 ## Run
 

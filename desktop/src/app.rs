@@ -1,21 +1,23 @@
 use std::path::PathBuf;
 
 use gpui::{
-    div, prelude::FluentBuilder as _, px, App, Context, Entity, InteractiveElement as _,
-    IntoElement, ParentElement as _, Render, SharedString, Styled, Subscription, Window,
+    App, AppContext as _, Context, Entity, InteractiveElement as _, IntoElement,
+    ParentElement as _, Render, SharedString, Styled, Subscription, Window, div,
+    prelude::FluentBuilder as _, px,
 };
 use gpui_component::{
-    button::Button,
+    ActiveTheme as _, Icon, IconName, Root, Sizable, StyledExt as _, Theme, ThemeMode, TitleBar,
+    button::{Button, ButtonVariants as _},
     h_flex,
     input::{Input, InputEvent, InputState},
     list::ListItem,
     resizable::{h_resizable, resizable_panel},
+    scroll::ScrollableElement as _,
     tab::{Tab, TabBar},
     text::TextView,
-    tree::{tree, TreeState},
-    v_flex, ActiveTheme as _, Icon, IconName, Selectable, Sizable, TitleBar,
+    tree::{TreeState, tree},
+    v_flex,
 };
-use gpui_component::Root;
 
 use crate::agent::{self, AgentContext, ChatMessage, ChatRole};
 use crate::vault::{self, OpenTab};
@@ -57,7 +59,10 @@ impl ParaApp {
 
         app._subscriptions = vec![
             cx.observe(&tree_state, |this, tree, cx| {
-                let selected = tree.read(cx).selected_item().map(|item| PathBuf::from(item.id.as_str()));
+                let selected = tree
+                    .read(cx)
+                    .selected_item()
+                    .map(|item| PathBuf::from(item.id.as_str()));
                 if let Some(path) = selected {
                     this.open_path_if_markdown(path, cx);
                 }
@@ -150,10 +155,13 @@ impl ParaApp {
         cx.notify();
     }
 
-    fn toggle_theme(&mut self, cx: &mut Context<Self>) {
-        cx.update_global::<gpui_component::Theme, _>(|theme, cx| {
-            theme.toggle_mode(cx);
-        });
+    fn toggle_theme(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let next = if Theme::global(cx).is_dark() {
+            ThemeMode::Light
+        } else {
+            ThemeMode::Dark
+        };
+        Theme::change(next, Some(window), cx);
         cx.notify();
     }
 
@@ -199,7 +207,7 @@ impl ParaApp {
                         Button::new("refresh-tree")
                             .ghost()
                             .xsmall()
-                            .icon(IconName::RotateCcw)
+                            .icon(IconName::Undo2)
                             .tooltip("Reload the file tree")
                             .on_click(cx.listener(|this, _, _, cx| this.refresh_tree(cx))),
                     )
@@ -207,9 +215,15 @@ impl ParaApp {
                         Button::new("toggle-theme")
                             .ghost()
                             .xsmall()
-                            .icon(IconName::SunMoon)
+                            .icon(if Theme::global(cx).is_dark() {
+                                IconName::Sun
+                            } else {
+                                IconName::Moon
+                            })
                             .tooltip("Toggle light / dark")
-                            .on_click(cx.listener(|this, _, _, cx| this.toggle_theme(cx))),
+                            .on_click(
+                                cx.listener(|this, _, window, cx| this.toggle_theme(window, cx)),
+                            ),
                     ),
             )
     }
@@ -218,36 +232,40 @@ impl ParaApp {
         v_flex()
             .size_full()
             .bg(cx.theme().sidebar)
-            .child(panel_header(cx, IconName::FolderTree, "Vault"))
+            .child(panel_header(cx, IconName::Folder, "Vault"))
             .child(
-                div().flex_1().min_h_0().px_1().py_1().child(tree(&self.tree_state, {
-                    let root = self.vault_root.clone();
-                    move |ix, entry, selected, _window, cx| {
-                        let item = entry.item();
-                        let path = PathBuf::from(item.id.as_str());
-                        let kind = vault::classify_path(&root, &path);
-                        let icon = tree_icon(entry.is_folder(), entry.is_expanded(), kind);
+                div()
+                    .flex_1()
+                    .min_h_0()
+                    .px_1()
+                    .py_1()
+                    .child(tree(&self.tree_state, {
+                        let root = self.vault_root.clone();
+                        move |ix, entry, selected, _window, cx| {
+                            let item = entry.item();
+                            let path = PathBuf::from(item.id.as_str());
+                            let kind = vault::classify_path(&root, &path);
+                            let icon = tree_icon(entry.is_folder(), entry.is_expanded(), kind);
 
-                        ListItem::new(("vault-item", ix))
-                            .selected(selected)
-                            .pl(px(12.) + px(14.) * entry.depth() as f32)
-                            .py_1()
-                            .child(
-                                h_flex()
-                                    .items_center()
-                                    .gap_2()
-                                    .w_full()
-                                    .min_w_0()
-                                    .child(Icon::new(icon).text_color(cx.theme().muted_foreground))
-                                    .child(
-                                        div()
-                                            .text_sm()
-                                            .truncate()
-                                            .child(item.label.clone()),
-                                    ),
-                            )
-                    }
-                })),
+                            ListItem::new(("vault-item", ix))
+                                .selected(selected)
+                                .pl(px(12.) + px(14.) * entry.depth() as f32)
+                                .py_1()
+                                .child(
+                                    h_flex()
+                                        .items_center()
+                                        .gap_2()
+                                        .w_full()
+                                        .min_w_0()
+                                        .child(
+                                            Icon::new(icon).text_color(cx.theme().muted_foreground),
+                                        )
+                                        .child(
+                                            div().text_sm().truncate().child(item.label.clone()),
+                                        ),
+                                )
+                        }
+                    })),
             )
     }
 
@@ -273,7 +291,7 @@ impl ParaApp {
                         ),
                         None => this.child(empty_state(
                             cx,
-                            IconName::FileText,
+                            IconName::File,
                             "Open a markdown file",
                             "Pick a note in the vault tree. Preview is read-only.",
                         )),
@@ -310,19 +328,16 @@ impl ParaApp {
                 cx.notify();
             }))
             .children(self.tabs.iter().enumerate().map(|(index, tab)| {
-                Tab::new()
-                    .id(("preview-tab", index))
-                    .label(tab.title.clone())
-                    .suffix(
-                        Button::new(("close-tab", index))
-                            .ghost()
-                            .xsmall()
-                            .icon(IconName::X)
-                            .tooltip("Close tab")
-                            .on_click(cx.listener(move |this, _, _, cx| {
-                                this.close_tab(index, cx);
-                            })),
-                    )
+                Tab::new().label(tab.title.clone()).suffix(
+                    Button::new(("close-tab", index))
+                        .ghost()
+                        .xsmall()
+                        .icon(IconName::Close)
+                        .tooltip("Close tab")
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            this.close_tab(index, cx);
+                        })),
+                )
             }))
             .into_any_element()
     }
@@ -339,13 +354,14 @@ impl ParaApp {
                     .min_h_0()
                     .px_3()
                     .py_3()
-                    .overflow_y_scroll()
+                    .overflow_y_scrollbar()
                     .child(
-                        v_flex()
-                            .gap_3()
-                            .children(self.messages.iter().enumerate().map(|(index, message)| {
-                                chat_bubble(index, message, cx)
-                            })),
+                        v_flex().gap_3().children(
+                            self.messages
+                                .iter()
+                                .enumerate()
+                                .map(|(index, message)| chat_bubble(index, message, cx)),
+                        ),
                     ),
             )
             .child(
@@ -362,7 +378,7 @@ impl ParaApp {
                             .child(
                                 Button::new("send-chat")
                                     .primary()
-                                    .icon(IconName::Send)
+                                    .icon(IconName::ArrowUp)
                                     .tooltip("Send")
                                     .on_click(cx.listener(|this, _, window, cx| {
                                         this.send_chat(window, cx);
@@ -386,23 +402,26 @@ impl Render for ParaApp {
             .bg(cx.theme().background)
             .child(self.render_title_bar(cx))
             .child(
-                h_resizable("para-workspace")
+                div()
+                    .id("para-workspace")
                     .flex_1()
+                    .min_h_0()
                     .size_full()
                     .child(
-                        resizable_panel()
-                            .size(px(260.))
-                            .size_range(px(180.)..px(420.))
-                            .child(self.render_file_tree(cx)),
-                    )
-                    .child(
-                        resizable_panel().child(self.render_preview(cx)),
-                    )
-                    .child(
-                        resizable_panel()
-                            .size(px(320.))
-                            .size_range(px(240.)..px(480.))
-                            .child(self.render_chat(cx)),
+                        h_resizable("para-workspace")
+                            .child(
+                                resizable_panel()
+                                    .size(px(260.))
+                                    .size_range(px(180.)..px(420.))
+                                    .child(self.render_file_tree(cx)),
+                            )
+                            .child(resizable_panel().child(self.render_preview(cx)))
+                            .child(
+                                resizable_panel()
+                                    .size(px(320.))
+                                    .size_range(px(240.)..px(480.))
+                                    .child(self.render_chat(cx)),
+                            ),
                     ),
             )
     }
@@ -416,7 +435,11 @@ fn panel_header(cx: &App, icon: IconName, title: &'static str) -> impl IntoEleme
         .items_center()
         .border_b_1()
         .border_color(cx.theme().border)
-        .child(Icon::new(icon).small().text_color(cx.theme().muted_foreground))
+        .child(
+            Icon::new(icon)
+                .small()
+                .text_color(cx.theme().muted_foreground),
+        )
         .child(div().text_sm().font_medium().child(title))
 }
 
@@ -479,12 +502,12 @@ fn tree_icon(is_folder: bool, expanded: bool, kind: vault::ParaKind) -> IconName
 
     match kind {
         vault::ParaKind::Inbox => IconName::Inbox,
-        vault::ParaKind::Index => IconName::LayoutList,
-        vault::ParaKind::Project => IconName::Target,
-        vault::ParaKind::Area => IconName::Layers,
+        vault::ParaKind::Index => IconName::LayoutDashboard,
+        vault::ParaKind::Project => IconName::Frame,
+        vault::ParaKind::Area => IconName::Building2,
         vault::ParaKind::Resource => IconName::BookOpen,
-        vault::ParaKind::Archive => IconName::Archive,
-        vault::ParaKind::Note => IconName::FileText,
+        vault::ParaKind::Archive => IconName::FolderClosed,
+        vault::ParaKind::Note => IconName::File,
     }
 }
 
