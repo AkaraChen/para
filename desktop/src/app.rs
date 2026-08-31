@@ -15,7 +15,7 @@ use gpui_component::{
     tab::{Tab, TabBar},
     tree::{tree, TreeState},
     v_flex, ActiveTheme as _, Icon, IconName, InteractiveElementExt as _, Root, Sizable, Theme,
-    ThemeMode, TitleBar, TITLE_BAR_HEIGHT,
+    ThemeMode, TITLE_BAR_HEIGHT,
 };
 
 use crate::agent::{self, AgentContext, ChatMessage};
@@ -342,11 +342,7 @@ impl ParaApp {
         v_flex()
             .size_full()
             .bg(cx.theme().sidebar)
-            .child(
-                TitleBar::new()
-                    .bg(cx.theme().sidebar)
-                    .border_color(cx.theme().sidebar),
-            )
+            .child(div().w_full().h(TITLE_BAR_HEIGHT).flex_shrink_0())
             .child(
                 div()
                     .id("agent-transcript")
@@ -433,5 +429,5 @@ fn tree_icon(is_folder: bool, expanded: bool, kind: vault::ParaKind) -> IconName
 
 pub fn open_root(window: &mut Window, cx: &mut App) -> Entity<Root> {
     let view = cx.new(|cx| ParaApp::new(window, cx));
-    cx.new(|cx| Root::new(view, window, cx))
+    cx.new(|cx| Root::new(view, window, cx).bordered(false))
 }
