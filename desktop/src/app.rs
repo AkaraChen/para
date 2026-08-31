@@ -171,9 +171,6 @@ impl ParaApp {
     fn render_file_tree(&self, cx: &mut Context<Self>) -> impl IntoElement {
         v_flex()
             .size_full()
-            .bg(cx.theme().sidebar)
-            .rounded_tl(WINDOW_RADIUS)
-            .rounded_bl(WINDOW_RADIUS)
             .child(self.render_app_title(cx))
             .child(
                 div()
@@ -244,19 +241,24 @@ impl ParaApp {
     fn render_preview(&self, cx: &mut Context<Self>) -> impl IntoElement {
         v_flex()
             .size_full()
-            .bg(cx.theme().background)
+            .bg(cx.theme().tokens.tab_bar)
             .child(self.render_tab_bar(cx))
-            .child(div().id("markdown-preview").flex_1().min_h_0().map(|this| {
-                match self.tabs.get(self.active_tab) {
-                    Some(tab) => this.child(preview::render_note(tab)),
-                    None => this.p_5().child(preview::empty_state(
-                        cx,
-                        IconName::File,
-                        "Open a markdown file",
-                        "Pick a note in the vault tree. Preview is read-only.",
-                    )),
-                }
-            }))
+            .child(
+                div()
+                    .id("markdown-preview")
+                    .flex_1()
+                    .min_h_0()
+                    .bg(cx.theme().background)
+                    .map(|this| match self.tabs.get(self.active_tab) {
+                        Some(tab) => this.child(preview::render_note(tab)),
+                        None => this.p_5().child(preview::empty_state(
+                            cx,
+                            IconName::File,
+                            "Open a markdown file",
+                            "Pick a note in the vault tree. Preview is read-only.",
+                        )),
+                    }),
+            )
     }
 
     fn render_tab_bar(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -340,9 +342,6 @@ impl ParaApp {
     fn render_chat(&self, cx: &mut Context<Self>) -> impl IntoElement {
         v_flex()
             .size_full()
-            .bg(cx.theme().sidebar)
-            .rounded_tr(WINDOW_RADIUS)
-            .rounded_br(WINDOW_RADIUS)
             .child(
                 TitleBar::new()
                     .bg(cx.theme().transparent)
@@ -394,6 +393,7 @@ impl Render for ParaApp {
             .size_full()
             .overflow_hidden()
             .rounded(WINDOW_RADIUS)
+            .bg(cx.theme().sidebar)
             .child(
                 h_resizable("para-workspace")
                     .child(
