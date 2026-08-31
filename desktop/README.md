@@ -19,6 +19,7 @@ This app does not write the vault. Use the `para` CLI to capture and file.
 - Rust 1.98+ (pinned in `rust-toolchain.toml`)
 - Linux, macOS, or Windows with the usual GPUI system deps
 - On Debian/Ubuntu: `libxkbcommon-dev libwayland-dev libvulkan-dev libssl-dev libfontconfig-dev libfreetype-dev`
+- Linux builds enable the `x11` and `wayland` features on `bezel-gpui-platform`
 
 ## Run
 
