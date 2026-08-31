@@ -2,8 +2,8 @@ use std::path::PathBuf;
 
 use gpui::{
     div, prelude::FluentBuilder as _, px, App, AppContext as _, Context, Entity, FontWeight,
-    InteractiveElement as _, IntoElement, MouseButton, ParentElement as _, Pixels, Render,
-    Styled, Subscription, Window, WindowControlArea,
+    InteractiveElement as _, IntoElement, MouseButton, ParentElement as _, Render, Styled,
+    Subscription, Window, WindowControlArea,
 };
 use gpui_component::{
     button::{Button, ButtonVariants as _},
@@ -15,10 +15,8 @@ use gpui_component::{
     tab::{Tab, TabBar},
     tree::{tree, TreeState},
     v_flex, ActiveTheme as _, Icon, IconName, InteractiveElementExt as _, Root, Sizable, Theme,
-    ThemeMode, TitleBar, TITLE_BAR_HEIGHT,
+    ThemeMode, TITLE_BAR_HEIGHT,
 };
-
-const WINDOW_RADIUS: Pixels = px(8.);
 
 use crate::agent::{self, AgentContext, ChatMessage};
 use crate::chat;
@@ -171,6 +169,7 @@ impl ParaApp {
     fn render_file_tree(&self, cx: &mut Context<Self>) -> impl IntoElement {
         v_flex()
             .size_full()
+            .bg(cx.theme().sidebar)
             .child(self.render_app_title(cx))
             .child(
                 div()
@@ -342,11 +341,8 @@ impl ParaApp {
     fn render_chat(&self, cx: &mut Context<Self>) -> impl IntoElement {
         v_flex()
             .size_full()
-            .child(
-                TitleBar::new()
-                    .bg(cx.theme().transparent)
-                    .border_color(cx.theme().transparent),
-            )
+            .bg(cx.theme().sidebar)
+            .child(div().w_full().h(TITLE_BAR_HEIGHT).flex_shrink_0())
             .child(
                 div()
                     .id("agent-transcript")
@@ -391,9 +387,7 @@ impl Render for ParaApp {
         div()
             .id("para-workspace")
             .size_full()
-            .overflow_hidden()
-            .rounded(WINDOW_RADIUS)
-            .bg(cx.theme().sidebar)
+            .bg(cx.theme().background)
             .child(
                 h_resizable("para-workspace")
                     .child(
@@ -435,10 +429,5 @@ fn tree_icon(is_folder: bool, expanded: bool, kind: vault::ParaKind) -> IconName
 
 pub fn open_root(window: &mut Window, cx: &mut App) -> Entity<Root> {
     let view = cx.new(|cx| ParaApp::new(window, cx));
-    cx.new(|cx| {
-        Root::new(view, window, cx)
-            .bg(cx.theme().transparent)
-            .rounded(WINDOW_RADIUS)
-            .overflow_hidden()
-    })
+    cx.new(|cx| Root::new(view, window, cx))
 }

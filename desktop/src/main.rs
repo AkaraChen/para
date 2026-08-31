@@ -1,7 +1,4 @@
-use gpui::{
-    WindowBackgroundAppearance, WindowBounds, WindowDecorations, WindowOptions, px, size,
-};
-use gpui_component::TitleBar;
+use gpui::{TitlebarOptions, WindowBounds, WindowOptions, point, px, size};
 use gpui_component_assets::Assets;
 
 mod agent;
@@ -16,14 +13,20 @@ fn main() {
     app.run(move |cx| {
         gpui_component::init(cx);
 
-        // Client decorations hide the OS title chrome. The window stays
-        // transparent so our rounded frame can show through the corners.
+        // Same pattern as egoist/waku: keep the OS frame (rounded corners,
+        // native traffic lights) and only make the titlebar fill transparent
+        // so the app header can sit in that row. Linux still uses server
+        // decorations; `appears_transparent` is a no-op there.
         let window_options = WindowOptions {
+            titlebar: Some(TitlebarOptions {
+                title: Some("para".into()),
+                appears_transparent: true,
+                traffic_light_position: Some(point(px(12.0), px(10.0))),
+            }),
             window_bounds: Some(WindowBounds::centered(size(px(1280.), px(800.)), cx)),
             window_min_size: Some(size(px(880.), px(560.))),
-            window_background: WindowBackgroundAppearance::Transparent,
-            window_decorations: Some(WindowDecorations::Client),
-            ..TitleBar::window_options()
+            app_owns_titlebar_drag: true,
+            ..Default::default()
         };
 
         cx.spawn(async move |cx| {
