@@ -100,10 +100,11 @@ Do not edit `cmd/para` by hand. It is generated-owned.
 
 ## Desktop preview
 
-[`desktop/`](desktop/) is a GPUI app that opens a vault: file tree, multi-tab read-only markdown, and a local PARA filing chat.
+[`desktop/`](desktop/) is a GPUI app that opens a vault: file tree, multi-tab read-only markdown, and a local PARA filing chat. First launch uses `~/para` and creates the PARA folders plus starter `INBOX.md` / `INDEX.md` if they are missing.
 
 ```bash
 cd desktop
+cargo run
 cargo run -- example-vault
 ```
 

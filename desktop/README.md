@@ -12,7 +12,7 @@ A [GPUI](https://www.gpui.rs/) + [gpui-component](https://longbridge.github.io/g
 - **Center:** multi-tab markdown preview (`TextView`, selectable, not editable)
 - **Right:** local PARA filing assistant (classifies notes, review checklist, CLI sketches)
 
-This app does not write the vault. Use the `para` CLI to capture and file.
+The preview is read-only. Use the `para` CLI (or any editor) to capture and file. On first launch the app will create `~/para` if needed, plus any missing PARA folders and starter `INBOX.md` / `INDEX.md`. Existing files are never overwritten.
 
 ## Requirements
 
@@ -28,14 +28,15 @@ From this directory:
 cargo run
 ```
 
-That opens `example-vault/` unless the current directory already looks like a PARA store.
+That opens `~/para` (created on first run with `INBOX.md`, `INDEX.md`, `Projects/`, `Areas/`, `Resources/`, and `Archives/` if they are missing).
 
 ```bash
+cargo run -- example-vault
 cargo run -- /path/to/vault
 PARA_VAULT=~/.para cargo run
 ```
 
-Resolution order: CLI path → `PARA_VAULT` → cwd if it has `INBOX.md` / PARA folders → `~/.para` → bundled `example-vault/`.
+Resolution order: CLI path → `PARA_VAULT` → `~/para` (ensured) → cwd.
 
 ## Tests
 

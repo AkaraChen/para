@@ -58,10 +58,11 @@ Archives/
 
 ## 桌面预览
 
-[`desktop/`](desktop/) 是 GPUI 应用：左边文件树，中间多 tab 只读 Markdown，右边本地 PARA 归档对话。
+[`desktop/`](desktop/) 是 GPUI 应用：左边文件树，中间多 tab 只读 Markdown，右边本地 PARA 归档对话。首次启动会打开 `~/para`，若目录为空或缺少 PARA 文件夹和基础 `INBOX.md` / `INDEX.md` 会自动补齐，已有文件不会覆盖。
 
 ```bash
 cd desktop
+cargo run
 cargo run -- example-vault
 ```
 
