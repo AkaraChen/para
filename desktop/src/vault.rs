@@ -118,22 +118,40 @@ fn home_dir() -> Option<PathBuf> {
 }
 
 pub fn resolve_root() -> PathBuf {
-    if let Some(arg) = std::env::args().nth(1) {
-        return PathBuf::from(arg);
-    }
-    if let Ok(from_env) = std::env::var("PARA_VAULT") {
-        if !from_env.is_empty() {
-            return PathBuf::from(from_env);
+    let root = if let Some(arg) = std::env::args().nth(1) {
+        PathBuf::from(arg)
+    } else if let Ok(from_env) = std::env::var("PARA_VAULT") {
+        if from_env.is_empty() {
+            default_root()
+        } else {
+            PathBuf::from(from_env)
         }
-    }
+    } else {
+        default_root()
+    };
 
-    if let Some(home) = home_dir() {
-        let root = default_user_vault(&home);
+    if is_default_user_vault(&root) {
         let _ = ensure_vault(&root);
-        return root;
     }
+    root
+}
 
+fn default_root() -> PathBuf {
+    if let Some(home) = home_dir() {
+        return default_user_vault(&home);
+    }
     std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
+}
+
+pub fn is_default_user_vault(path: &Path) -> bool {
+    let Some(home) = home_dir() else {
+        return false;
+    };
+    let expected = default_user_vault(&home);
+    match (path.canonicalize(), expected.canonicalize()) {
+        (Ok(left), Ok(right)) => left == right,
+        _ => path == expected,
+    }
 }
 
 /// Create the PARA folders and starter markdown a first-run vault needs.
@@ -659,6 +677,14 @@ mod tests {
             default_user_vault(Path::new("/home/ada")),
             PathBuf::from("/home/ada/para")
         );
+    }
+
+    #[test]
+    fn is_default_user_vault_matches_home_para() {
+        let home = home_dir().expect("HOME or USERPROFILE");
+        assert!(is_default_user_vault(&default_user_vault(&home)));
+        assert!(!is_default_user_vault(Path::new("/tmp/not-para")));
+        assert!(!is_default_user_vault(&home.join(".para")));
     }
 
     #[test]
