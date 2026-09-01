@@ -74,6 +74,49 @@ impl ParaKind {
     }
 }
 
+const PARA_DIR_NAMES: &[&str] = &["Projects", "Areas", "Resources", "Archives"];
+
+const INBOX_SEED: &str = "\
+---
+updated: 
+---
+
+# Inbox
+
+Dump first. File later.
+";
+
+const INDEX_SEED: &str = "\
+---
+title: para
+horizon: 
+---
+
+# para
+
+Personal PARA store.
+
+| Bucket | Question |
+| --- | --- |
+| Project | Finish line + outcome? |
+| Area | Standard to keep? |
+| Resource | Topic to keep? |
+| Archive | Inactive but searchable? |
+
+Capture into [INBOX.md](INBOX.md). File with the `para` CLI.
+";
+
+/// Home-directory PARA vault (`~/para` on Unix, `%USERPROFILE%\para` on Windows).
+pub fn default_user_vault(home: &Path) -> PathBuf {
+    home.join("para")
+}
+
+fn home_dir() -> Option<PathBuf> {
+    std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .map(PathBuf::from)
+}
+
 pub fn resolve_root() -> PathBuf {
     if let Some(arg) = std::env::args().nth(1) {
         return PathBuf::from(arg);
@@ -84,24 +127,60 @@ pub fn resolve_root() -> PathBuf {
         }
     }
 
-    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    if looks_like_vault(&cwd) {
-        return cwd;
+    if let Some(home) = home_dir() {
+        let root = default_user_vault(&home);
+        let _ = ensure_vault(&root);
+        return root;
     }
 
-    if let Some(home) = std::env::var_os("HOME") {
-        let global = PathBuf::from(home).join(".para");
-        if looks_like_vault(&global) {
-            return global;
+    std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
+}
+
+/// Create the PARA folders and starter markdown a first-run vault needs.
+///
+/// Existing files are never overwritten. Missing `Projects` / `Areas` /
+/// `Resources` / `Archives`, `INBOX.md`, and `INDEX.md` are created.
+pub fn ensure_vault(root: &Path) -> std::io::Result<EnsureReport> {
+    fs::create_dir_all(root)?;
+
+    let mut created_dirs = Vec::new();
+    let mut created_files = Vec::new();
+
+    for name in PARA_DIR_NAMES {
+        let dir = root.join(name);
+        if !dir.is_dir() {
+            fs::create_dir_all(&dir)?;
+            created_dirs.push((*name).to_string());
         }
     }
 
-    let example = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("example-vault");
-    if example.is_dir() {
-        return example;
+    if !has_inbox(root) {
+        fs::write(root.join("INBOX.md"), INBOX_SEED)?;
+        created_files.push("INBOX.md".to_string());
+    }
+    if !has_index(root) {
+        fs::write(root.join("INDEX.md"), INDEX_SEED)?;
+        created_files.push("INDEX.md".to_string());
     }
 
-    cwd
+    Ok(EnsureReport {
+        created_dirs,
+        created_files,
+    })
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct EnsureReport {
+    pub created_dirs: Vec<String>,
+    pub created_files: Vec<String>,
+}
+
+fn has_inbox(root: &Path) -> bool {
+    root.join("INBOX.md").is_file() || root.join("Inbox.md").is_file()
+}
+
+fn has_index(root: &Path) -> bool {
+    root.join("INDEX.md").is_file() || root.join("Index.md").is_file()
 }
 
 pub fn looks_like_vault(path: &Path) -> bool {
@@ -571,6 +650,83 @@ mod tests {
         assert!(!looks_like_vault(&root));
         fs::write(root.join("INBOX.md"), "").unwrap();
         assert!(looks_like_vault(&root));
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn default_user_vault_is_home_para() {
+        assert_eq!(
+            default_user_vault(Path::new("/home/ada")),
+            PathBuf::from("/home/ada/para")
+        );
+    }
+
+    #[test]
+    fn ensure_vault_creates_missing_folders_and_starter_markdown() {
+        let root = temp_dir();
+        let report = ensure_vault(&root).expect("ensure empty vault");
+
+        assert_eq!(
+            report.created_dirs,
+            vec!["Projects", "Areas", "Resources", "Archives"]
+        );
+        assert_eq!(report.created_files, vec!["INBOX.md", "INDEX.md"]);
+
+        for name in PARA_DIR_NAMES {
+            assert!(root.join(name).is_dir(), "missing {name}");
+        }
+        assert!(root.join("INBOX.md").is_file());
+        assert!(root.join("INDEX.md").is_file());
+        let inbox = fs::read_to_string(root.join("INBOX.md")).unwrap();
+        assert!(inbox.contains("# Inbox"));
+        assert!(inbox.contains("Dump first"));
+        let index = fs::read_to_string(root.join("INDEX.md")).unwrap();
+        assert!(index.contains("# para"));
+        assert!(looks_like_vault(&root));
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn ensure_vault_does_not_overwrite_existing_notes() {
+        let root = temp_dir();
+        fs::create_dir_all(root.join("Projects")).unwrap();
+        fs::write(root.join("INBOX.md"), "keep my captures\n").unwrap();
+        fs::write(root.join("Projects/ship.md"), "# ship\n").unwrap();
+
+        let report = ensure_vault(&root).expect("fill missing pieces");
+        assert_eq!(report.created_dirs, vec!["Areas", "Resources", "Archives"]);
+        assert_eq!(report.created_files, vec!["INDEX.md"]);
+        assert_eq!(
+            fs::read_to_string(root.join("INBOX.md")).unwrap(),
+            "keep my captures\n"
+        );
+        assert_eq!(
+            fs::read_to_string(root.join("Projects/ship.md")).unwrap(),
+            "# ship\n"
+        );
+        assert!(root.join("INDEX.md").is_file());
+        assert!(root.join("Areas").is_dir());
+
+        let again = ensure_vault(&root).expect("idempotent");
+        assert!(again.created_dirs.is_empty());
+        assert!(again.created_files.is_empty());
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn ensure_vault_treats_inbox_alias_as_present() {
+        let root = temp_dir();
+        fs::write(root.join("Inbox.md"), "already here\n").unwrap();
+        fs::write(root.join("Index.md"), "overview\n").unwrap();
+
+        let report = ensure_vault(&root).expect("aliases count");
+        assert!(report.created_files.is_empty());
+        assert!(!root.join("INBOX.md").exists());
+        assert!(!root.join("INDEX.md").exists());
+        assert_eq!(
+            fs::read_to_string(root.join("Inbox.md")).unwrap(),
+            "already here\n"
+        );
         let _ = fs::remove_dir_all(root);
     }
 
